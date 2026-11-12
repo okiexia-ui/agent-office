@@ -1,0 +1,6 @@
+# Merge into ~/.hermes/config.yaml; keep your existing mcp_servers entries.
+mcp_servers:
+  agent_office:
+    url: "https://your-office.example/api/hermes/mcp"
+    headers:
+      OAI-Sites-Authorization: "Bearer ${AGENT_OFFICE_TOKEN}"

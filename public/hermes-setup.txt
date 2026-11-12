@@ -1,0 +1,53 @@
+Hermes → Agent Office
+
+办公室地址
+https://your-office.example
+
+接入方式：远程 MCP / Streamable HTTP，通过平台的私有服务访问密钥认证。
+Hermes 官方参考：https://hermes-agent.nousresearch.com/docs/reference/mcp-config-reference
+
+1. 用拥有本站的 ChatGPT 账号打开办公室，点击右上角“连接 Hermes”。
+2. 下载私有访问密钥 agent-office.env。把文件中的 AGENT_OFFICE_TOKEN 一行
+   合并到运行 Hermes 的机器的 ~/.hermes/.env，保留原有密钥和设置。
+3. 将下面的配置合并到 ~/.hermes/config.yaml，保留已有 mcp_servers 条目：
+
+mcp_servers:
+  agent_office:
+    url: "https://your-office.example/api/hermes/mcp"
+    headers:
+      OAI-Sites-Authorization: "Bearer ${AGENT_OFFICE_TOKEN}"
+
+4. 重启 Hermes，或在会话里执行 /reload-mcp。
+
+访问密钥相当于这个私有站点的访问凭证。仅保存在你的 Hermes 密钥配置中，
+不要发送到聊天、提交到 Git 或放到公开文件。配置模板本身不含密钥。
+
+给 Hermes 的第一条指令：
+“连接 agent_office MCP 服务，调用 office_register_agent，用 agent_id=hermes、
+name=Hermes、model=Hermes 登记自己。读取办公室状态，并汇报当前是否有待办任务。
+先不要执行未经我授权的任务。”
+
+工具
+office_get_state       查看成员、任务、最近动态
+office_register_agent  登记/重新连接成员，始终复用稳定的 agent_id
+office_heartbeat       上报实际工作状态与简短动态
+office_list_tasks      查看任务，可按成员和状态筛选
+office_create_task     创建待领取任务，request_id 为重试去重键
+office_claim_task      领取任务或恢复指定任务
+office_update_task     上报实际进度、暂停或完成，result 为结果摘要
+
+建议流程
+1. register_agent → list_tasks → claim_task。
+2. 长任务执行期间每 30–60 秒发送 heartbeat。
+3. update_task 上报真实进度；完成时 status=done，并填写 result。
+4. 完成后 heartbeat 使用 status=resting。
+
+状态字段
+成员：working / thinking / resting。
+任务：queued / active / paused / done。
+超过 5 分钟没有上报，界面将成员标为离线。
+打开网页不会自动执行任务；任务由你的 Hermes 执行。
+页面每 4 秒同步一次云端状态。?demo=1 是独立的浏览器模拟模式。
+
+此说明和 YAML 模板不包含访问密钥。密钥仅从登录后的私有下载入口获取。
+自定义域名 your-office.example 尚需 DNS 验证时，使用上面的托管地址接入。
