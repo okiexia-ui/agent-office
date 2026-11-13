@@ -43,22 +43,62 @@ function route(from,to){
 
 export class OfficeScene {
  constructor(container,labels,onSelect,onZoom,onDesk,onActivity){
-  this.onDesk=onDesk;this.onActivity=onActivity;this.workstations=new Map();this.hotspots=[];this.effects={};this.container=container;this.labels=labels;this.onSelect=onSelect;this.onZoom=onZoom;this.characters=new Map();this.clock=new THREE.Clock();this.reducedMotion=matchMedia('(prefers-reduced-motion: reduce)').matches;this.isPaused=false;this.night=false;this.labelAnchor=new THREE.Vector3();
-  this.trees=[];this.bursts=[];this.spriteMaterials=new Map();this.podLights=[];this.step=new THREE.Vector3();this.lastTime=0;this.rallyTime=0;
+  this.onDesk=onDesk;this.onActivity=onActivity;this.workstations=new Map();this.hotspots=[];this.effects={};this.container=container;this.labels=labels;this.onSelect=onSelect;this.onZoom=onZoom;this.characters=new Map();this.clock=new THREE.Clock();this.reducedMotion=matchMedia('(prefers-reduced-motion: reduce)').matches;this.isPaused=false;this.night=false;this.labelAnchor=new THREE.Vector3();this.dragging=false;this.lastCameraMove=0;this.lastFrame=0;this.agentSignature='';
+  this.trees=[];this.bursts=[];this.spriteMaterials=new Map();this.podLights=[];this.step=new THREE.Vector3();this.lastTime=0;this.rallyTime=0;this.players=[undefined,undefined];
   this.scene=new THREE.Scene();
   this.camera=new THREE.OrthographicCamera(-10,10,8,-8,.1,150);this.camera.position.set(14,14,17);
   this.renderer=new THREE.WebGLRenderer({antialias:true,alpha:true,powerPreference:'low-power'});this.renderer.setClearColor(0x000000,0);this.renderer.setPixelRatio(Math.min(devicePixelRatio,1.7));this.renderer.shadowMap.enabled=true;this.renderer.shadowMap.type=THREE.PCFSoftShadowMap;this.renderer.outputColorSpace=THREE.SRGBColorSpace;this.renderer.toneMapping=THREE.ACESFilmicToneMapping;this.renderer.toneMappingExposure=1.28;container.appendChild(this.renderer.domElement);
   this.controls=new OrbitControls(this.camera,this.renderer.domElement);this.controls.target.set(0,.4,0);this.controls.enableDamping=true;this.controls.dampingFactor=.075;this.controls.enablePan=true;this.controls.minPolarAngle=.15;this.controls.maxPolarAngle=Math.PI/2.3;this.controls.minZoom=.55;this.controls.maxZoom=2.5;this.controls.maxDistance=45;this.controls.touches={ONE:THREE.TOUCH.ROTATE,TWO:THREE.TOUCH.DOLLY_PAN};this.controls.update();
-  this.controls.addEventListener('change',()=>this.onZoom?.(Math.round(this.camera.zoom*100)));
+  this.controls.addEventListener('change',()=>{this.lastCameraMove=performance.now();this.onZoom?.(Math.round(this.camera.zoom*100));});
   this.hemi=new THREE.HemisphereLight(0xfff9e6,0xb4c49d,3.1);this.scene.add(this.hemi);
   this.sun=new THREE.DirectionalLight(0xfff5dd,4.4);this.sun.position.set(-5,20,12);this.sun.castShadow=true;this.sun.shadow.mapSize.set(2048,2048);Object.assign(this.sun.shadow.camera,{left:-19,right:19,top:19,bottom:-19,near:1,far:60});this.sun.shadow.normalBias=.045;this.sun.shadow.bias=-.0003;this.sun.shadow.radius=4;this.scene.add(this.sun);
   this.fill=new THREE.DirectionalLight(0xe2eeff,1.2);this.fill.position.set(8,7,-7);this.scene.add(this.fill);
   this.materialCache=new Map();this.meshes=[];
   this.buildOffice();this.resizeObserver=new ResizeObserver(()=>this.resize());this.resizeObserver.observe(container);this.resize();
-  this.pointerStart=null;container.addEventListener('pointerdown',e=>{this.pointerStart={x:e.clientX,y:e.clientY};this.cameraAnimation=null;});container.addEventListener('pointerup',e=>{if(this.pointerStart&&Math.hypot(e.clientX-this.pointerStart.x,e.clientY-this.pointerStart.y)<5)this.pick(e);});
+  this.pointerStart=null;container.addEventListener('pointerdown',e=>{this.pointerStart={x:e.clientX,y:e.clientY};this.cameraAnimation=null;this.dragging=true;});container.addEventListener('pointerup',e=>{if(this.pointerStart&&Math.hypot(e.clientX-this.pointerStart.x,e.clientY-this.pointerStart.y)<5)this.pick(e);});
+  for(const type of ['pointerup','pointercancel','blur'])window.addEventListener(type,()=>{this.dragging=false;});
   this.animate=this.animate.bind(this);this.renderer.setAnimationLoop(this.animate);
  }
- mat(color,roughness=.75){const key=color+':'+roughness;if(!this.materialCache.has(key))this.materialCache.set(key,new THREE.MeshStandardMaterial({color,roughness}));return this.materialCache.get(key);}
+ mat(color,roughness=.75){const key=color+':'+roughness;if(!this.materialCache.has(key)){const m=new THREE.MeshStandardMaterial({color,roughness});m.userData.bake=true;this.materialCache.set(key,m);}return this.materialCache.get(key);}
+ bakedMaterial(roughness){const key='baked:'+roughness;if(!this.materialCache.has(key))this.materialCache.set(key,new THREE.MeshStandardMaterial({vertexColors:true,roughness}));return this.materialCache.get(key);}
+ // Draw calls, not triangles, are what made this scene heavy: every plank, key and cushion
+ // was its own mesh. bake() folds the meshes under `root` into one vertex-coloured mesh per
+ // roughness and shadow setting. Subtrees marked `userData.dynamic` are left alone so they
+ // can keep moving. The originals stay in the graph, hidden, because clicks are still
+ // resolved against them (Raycaster ignores `visible`).
+ bake(root){
+  root.updateWorldMatrix(true,true);
+  const inverse=new THREE.Matrix4().copy(root.matrixWorld).invert(),buckets=new Map();
+  const collect=o=>{
+   if(o!==root&&o.userData.dynamic)return;
+   if(o.isMesh&&o.visible){const m=o.material,kind=m.userData.bake?'c:'+m.roughness:m.userData.merge?'m:'+m.uuid:null;if(kind){const key=`${kind}:${+o.castShadow}:${+o.receiveShadow}`;if(!buckets.has(key))buckets.set(key,[]);buckets.get(key).push(o);}}
+   for(const child of o.children)collect(child);
+  };
+  collect(root);
+  const local=new THREE.Matrix4(),normalMatrix=new THREE.Matrix3(),v=new THREE.Vector3();
+  for(const meshes of buckets.values()){
+   if(meshes.length<2)continue;
+   const first=meshes[0],colored=!!first.material.userData.bake;let vertexCount=0,indexCount=0;
+   for(const mesh of meshes){const g=mesh.geometry;vertexCount+=g.attributes.position.count;indexCount+=g.index?g.index.count:g.attributes.position.count;}
+   const position=new Float32Array(vertexCount*3),normal=new Float32Array(vertexCount*3),color=colored?new Float32Array(vertexCount*3):null,index=new Uint32Array(indexCount);
+   let vertexOffset=0,indexOffset=0;
+   for(const mesh of meshes){
+    const g=mesh.geometry,p=g.attributes.position,n=g.attributes.normal,c=mesh.material.color;
+    local.multiplyMatrices(inverse,mesh.matrixWorld);normalMatrix.getNormalMatrix(local);
+    for(let i=0;i<p.count;i++){
+     const at=(vertexOffset+i)*3;
+     v.fromBufferAttribute(p,i).applyMatrix4(local);position[at]=v.x;position[at+1]=v.y;position[at+2]=v.z;
+     v.fromBufferAttribute(n,i).applyMatrix3(normalMatrix).normalize();normal[at]=v.x;normal[at+1]=v.y;normal[at+2]=v.z;
+     if(color){color[at]=c.r;color[at+1]=c.g;color[at+2]=c.b;}
+    }
+    if(g.index)for(let i=0;i<g.index.count;i++)index[indexOffset++]=g.index.getX(i)+vertexOffset;
+    else for(let i=0;i<p.count;i++)index[indexOffset++]=vertexOffset+i;
+    vertexOffset+=p.count;mesh.visible=false;
+   }
+   const geometry=new THREE.BufferGeometry();geometry.setAttribute('position',new THREE.BufferAttribute(position,3));geometry.setAttribute('normal',new THREE.BufferAttribute(normal,3));if(color)geometry.setAttribute('color',new THREE.BufferAttribute(color,3));geometry.setIndex(new THREE.BufferAttribute(index,1));
+   const merged=new THREE.Mesh(geometry,colored?this.bakedMaterial(first.material.roughness):first.material);merged.castShadow=first.castShadow;merged.receiveShadow=first.receiveShadow;merged.raycast=()=>{};root.add(merged);
+  }
+ }
  group(x,y,z,parent=this.scene){const g=new THREE.Group();g.position.set(x,y,z);parent.add(g);return g;}
  box(w,h,d,color,x,y,z,parent=this.scene,round=0){let geo;if(round){const shape=new THREE.Shape();const r=Math.min(round,w/2,h/2);const a=-w/2,b=-h/2;shape.moveTo(a+r,b);shape.lineTo(a+w-r,b);shape.quadraticCurveTo(a+w,b,a+w,b+r);shape.lineTo(a+w,b+h-r);shape.quadraticCurveTo(a+w,b+h,a+w-r,b+h);shape.lineTo(a+r,b+h);shape.quadraticCurveTo(a,b+h,a,b+h-r);shape.lineTo(a,b+r);shape.quadraticCurveTo(a,b,a+r,b);geo=new THREE.ExtrudeGeometry(shape,{depth:d,bevelEnabled:true,bevelThickness:r*.4,bevelSize:r*.4,bevelSegments:2,steps:1,curveSegments:3});geo.translate(0,0,-d/2);}else geo=new THREE.BoxGeometry(w,h,d);const m=new THREE.Mesh(geo,this.mat(color));m.position.set(x,y,z);m.castShadow=true;m.receiveShadow=true;parent.add(m);return m;}
  sphere(r,color,x,y,z,parent=this.scene,sx=1,sy=1,sz=1){const m=new THREE.Mesh(new THREE.SphereGeometry(r,20,14),this.mat(color,.8));m.position.set(x,y,z);m.scale.set(sx,sy,sz);m.castShadow=true;m.receiveShadow=true;parent.add(m);return m;}
@@ -76,7 +116,7 @@ export class OfficeScene {
   // One rug per pod gives each team its own little territory.
   for(const [x,z,color] of PODS){this.box(4.9,.035,4.2,'#f4e7d0',x,.17,z,s,.04);this.box(4.7,.04,4,color,x,.19,z,s,.04);}
   this.box(6.1,.035,12.2,'#c7d1b5',7.4,.19,0,s,.05);this.box(5.8,.01,11.9,'#d1d9be',7.4,.215,0,s,.03);
-  const glass=new THREE.MeshPhysicalMaterial({color:'#eff5e7',transparent:true,opacity:.19,roughness:.12,depthWrite:false,side:THREE.DoubleSide});
+  const glass=new THREE.MeshPhysicalMaterial({color:'#eff5e7',transparent:true,opacity:.19,roughness:.12,depthWrite:false,side:THREE.DoubleSide});glass.userData.merge=true;
   for(let i=0;i<12;i++){
    const x=-11+i*2;this.box(.055,3.1,.055,'#e7e9d9',x,1.7,-6.6);
    if(i<11){const pane=new THREE.Mesh(new THREE.PlaneGeometry(1.94,3),glass);pane.position.set(x+1,1.72,-6.6);s.add(pane);}
@@ -89,8 +129,8 @@ export class OfficeScene {
   this.plant(-10.55,-6.1,.8);this.plant(-10.55,6.15,.8);this.plant(1.6,-6.15,.75);this.plant(10.5,-.9,.85);this.plant(10.5,5.9,.9);
   this.wallClock(2.8,2.6,-6.54);
   DESKS.forEach((desk,i)=>this.desk(desk,i));
-  for(const [x,z] of PODS){const light=new THREE.PointLight('#ffcf8f',0,8.5,1.4);light.position.set(x,2.3,z);s.add(light);this.podLights.push({light,x,z});}
-  this.loungeLight=new THREE.PointLight('#ffd6a0',0,9,1.4);this.loungeLight.position.set(7.4,2.4,-.5);s.add(this.loungeLight);
+  for(const [x,z] of PODS){const light=new THREE.PointLight('#ffcf8f',0,8.5,1.4);light.visible=false;light.position.set(x,2.3,z);s.add(light);this.podLights.push({light,x,z});}
+  this.loungeLight=new THREE.PointLight('#ffd6a0',0,9,1.4);this.loungeLight.visible=false;this.loungeLight.position.set(7.4,2.4,-.5);s.add(this.loungeLight);
   this.buildLounge();
   this.buildCat();
   this.buildVacuum();
@@ -99,6 +139,7 @@ export class OfficeScene {
   const sign=new THREE.Mesh(new THREE.PlaneGeometry(3.6,.65),this.text('ROOM FOR GOOD IDEAS.',768,128,33,'#839075','#e5e9d8'));sign.position.set(7,2.5,-6.54);s.add(sign);
   this.floorText('FOCUS & FLOW  /  4 PODS · 16 SEATS',4.6,-4.5,6.1,'#a78363');
   this.floorText('LOUNGE & PLAY',3,7.4,-1.2,'#7f8f6d');
+  this.bake(s);
  }
  buildLounge(){
   const s=this.scene;
@@ -124,16 +165,16 @@ export class OfficeScene {
  }
  buildCat(){
   const bed=this.group(9.9,.21,3.3);this.cylinder(.48,.5,.08,'#e7d2ad',0,.04,0,bed,28);const rim=new THREE.Mesh(new THREE.TorusGeometry(.46,.1,8,28),this.mat('#d9b17e'));rim.rotation.x=Math.PI/2;rim.position.y=.1;rim.castShadow=true;bed.add(rim);
-  this.cat=this.group(9.9,.2,3.3);this.catBody=this.group(0,0,0,this.cat);const c=this.catBody;
+  this.cat=this.group(9.9,.2,3.3);this.cat.userData.dynamic=true;this.catBody=this.group(0,0,0,this.cat);const c=this.catBody;
   this.sphere(.46,'#dcad78',0,.25,0,c,1.2,.65,.8);this.sphere(.27,'#e9bb86',.38,.43,.15,c,1,.9,.85);
   for(const x of [.23,.53]){const ear=new THREE.Mesh(new THREE.ConeGeometry(.115,.23,3),this.mat('#d7a16a'));ear.position.set(x,.68,.15);c.add(ear);this.box(.08,.018,.015,'#6e6249',x,.44,.37,c);}
   this.sphere(.035,'#bd846d',.38,.37,.39,c);
-  this.catTail=this.group(-.4,.27,.2,c);const tail=new THREE.Mesh(new THREE.TorusGeometry(.29,.085,8,16,Math.PI*1.4),this.mat('#cf9e68'));tail.rotation.x=Math.PI/2;this.catTail.add(tail);
+  this.catTail=this.group(-.4,.27,.2,c);this.catTail.userData.dynamic=true;const tail=new THREE.Mesh(new THREE.TorusGeometry(.29,.085,8,16,Math.PI*1.4),this.mat('#cf9e68'));tail.rotation.x=Math.PI/2;this.catTail.add(tail);this.bake(c);
   this.catState={index:0,waitUntil:6,yaw:0};
   this.addHotspot(this.cat,'cat','摸摸小猫',[9.9,1.45,3.3],this.cat);
  }
  buildVacuum(){
-  const [x,z]=VACUUM_ROUTE[0];this.vacuum=this.group(x,.12,z);
+  const [x,z]=VACUUM_ROUTE[0];this.vacuum=this.group(x,.12,z);this.vacuum.userData.dynamic=true;
   this.cylinder(.3,.3,.09,'#f1eee4',0,.05,0,this.vacuum,28);this.cylinder(.22,.22,.02,'#8f9a92',0,.105,0,this.vacuum,28);this.box(.36,.05,.07,'#6f7b74',0,.05,.27,this.vacuum,.02);
   this.vacuumLed=new THREE.Mesh(new THREE.SphereGeometry(.03,10,8),new THREE.MeshBasicMaterial({color:'#7fd39b'}));this.vacuumLed.position.set(0,.12,.16);this.vacuum.add(this.vacuumLed);
   this.vacuum.traverse(o=>{if(o.isMesh)o.userData.hotspot='vacuum';});
@@ -151,12 +192,12 @@ export class OfficeScene {
   if(kind==='vacuum')this.vacuumState.spinAt=t;
  }
 
- tree(x,z,scale){const g=this.group(x,-.2,z);g.scale.setScalar(scale);this.trees.push(g);this.cylinder(.12,.17,1.65,'#baa483',0,.8,0,g);this.sphere(.85,'#afc496',0,2,0,g,.9,1.1,.85);this.sphere(.64,'#b8cfa1',-.4,2.3,.1,g);this.sphere(.6,'#a7be91',.4,1.9,-.05,g);}
+ tree(x,z,scale){const g=this.group(x,-.2,z);g.userData.dynamic=true;g.scale.setScalar(scale);this.trees.push(g);this.cylinder(.12,.17,1.65,'#baa483',0,.8,0,g);this.sphere(.85,'#afc496',0,2,0,g,.9,1.1,.85);this.sphere(.64,'#b8cfa1',-.4,2.3,.1,g);this.sphere(.6,'#a7be91',.4,1.9,-.05,g);this.bake(g);}
  plant(x,z,scale){const g=this.group(x,.15,z);g.scale.setScalar(scale);this.cylinder(.32,.24,.53,'#e9d8b9',0,.27,0,g);this.cylinder(.29,.28,.03,'#8e846b',0,.54,0,g);this.cylinder(.045,.06,.85,'#9eae80',0,.9,0,g);for(let i=0;i<7;i++){const a=i*2.4;const leaf=this.sphere(.3,i%2?'#90ae7e':'#a1bc88',Math.cos(a)*.22,1.12+(i%3)*.16,Math.sin(a)*.22,g,.7,1.35,.5);leaf.rotation.z=Math.cos(a)*.6;}}
  bookcase(x,z){const g=this.group(x,0,z);g.rotation.y=Math.PI/2;this.box(1.6,2.45,.15,'#c8af88',0,1.4,-.25,g);this.box(.09,2.5,.6,'#d4ba91',-.8,1.4,0,g);this.box(.09,2.5,.6,'#d4ba91',.8,1.4,0,g);for(let i=0;i<4;i++){const y=.25+i*.8;this.box(1.7,.1,.65,'#d6bd94',0,y,0,g);if(i<3)for(let j=0;j<8;j++){const colors=['#93afa3','#d59d7c','#d7c18b','#9da2b2','#b1bd93'];this.box(.11,.4+(j%3)*.07,.3,colors[(i+j)%5],-.66+j*.18,y+.29,.04,g,.01);}}}
  // A real clock: the hands show the viewer's local time.
  wallClock(x,y,z){const rim=this.cylinder(.28,.28,.055,'#d6d8c8',x,y,z);rim.rotation.x=Math.PI/2;const face=this.cylinder(.25,.25,.061,'#fcf9ed',x,y,z+.01);face.rotation.x=Math.PI/2;
-  const hand=(length,width,color,depth)=>{const pivot=this.group(x,y,z+depth);this.box(width,length,.008,color,0,length/2-.02,0,pivot);return pivot;};
+  const hand=(length,width,color,depth)=>{const pivot=this.group(x,y,z+depth);pivot.userData.dynamic=true;this.box(width,length,.008,color,0,length/2-.02,0,pivot);return pivot;};
   this.clockHands={hour:hand(.13,.022,'#6f7d66',.048),minute:hand(.19,.016,'#819077',.054),second:hand(.21,.006,'#d48a63',.06)};}
  desk(desk,i){const g=this.group(desk.x,0,desk.z);g.rotation.y=desk.dir>0?0:Math.PI;
   this.box(2.13,.13,1.03,'#f7f3e7',0,1.2,0,g,.03);this.box(.5,1.02,.76,'#c3ac88',-.68,.65,0,g,.02);this.box(.5,.03,.75,'#b3a07f',-.68,.65,0,g);this.box(.08,1.03,.08,'#c6c7b6',.84,.64,-.36,g);this.box(.08,1.03,.08,'#c6c7b6',.84,.64,.36,g);this.box(.19,.04,.33,'#8e9992',-.15,1.3,-.24,g,.01);this.box(.055,.25,.055,'#77867d',-.15,1.44,-.31,g);this.box(.82,.53,.07,'#5a6962',-.15,1.76,-.31,g,.02);
@@ -173,7 +214,7 @@ export class OfficeScene {
   this.workstations.set(desk.id,{group:g,plate,screen,chair,bulb,owner:null,desk});
  }
  plateMaterial(text,owned){const m=this.text(text,384,72,owned?25:24,owned?'#68795a':'#ac9879','#f7f1df');m.side=THREE.FrontSide;return m;}
- screen(i){const canvas=document.createElement('canvas');canvas.width=256;canvas.height=160;const texture=new THREE.CanvasTexture(canvas);texture.colorSpace=THREE.SRGBColorSpace;const mesh=new THREE.Mesh(new THREE.PlaneGeometry(.74,.43),new THREE.MeshBasicMaterial({map:texture}));const screen={mesh,canvas,ctx:canvas.getContext('2d'),texture,seed:i*37+5,mode:'',drawnAt:-9};this.drawScreen(screen,0);return screen;}
+ screen(i){const canvas=document.createElement('canvas');canvas.width=256;canvas.height=160;const texture=new THREE.CanvasTexture(canvas);texture.colorSpace=THREE.SRGBColorSpace;const mesh=new THREE.Mesh(new THREE.PlaneGeometry(.74,.43),new THREE.MeshBasicMaterial({map:texture}));const screen={mesh,canvas,ctx:canvas.getContext('2d'),texture,seed:i*37+5,mode:'',drawnAt:-9,every:.16+(i%8)*.011};this.drawScreen(screen,0);return screen;}
  // Screens tell you what is going on at a glance: code scrolling while working, ideas
  // orbiting while thinking, a bouncing logo while the owner is away, and dark when empty.
  drawScreen(screen,t){
@@ -195,7 +236,7 @@ export class OfficeScene {
   }
   screen.texture.needsUpdate=true;
  }
- chair(x,z,parent=this.scene){const g=this.group(x,0,z,parent);this.cylinder(.06,.07,.45,'#7c8980',0,.49,0,g);this.cylinder(.31,.31,.05,'#839088',0,.26,0,g);this.box(.62,.13,.61,'#6d7e73',0,.78,0,g,.05);const back=this.box(.6,.58,.12,'#75867b',0,1.13,.27,g,.06);back.rotation.x=-.08;this.box(.05,.33,.05,'#7e8980',-.32,.91,.06,g);this.box(.05,.33,.05,'#7e8980',.32,.91,.06,g);this.box(.07,.055,.3,'#63766b',-.32,1.08,.04,g,.02);this.box(.07,.055,.3,'#63766b',.32,1.08,.04,g,.02);for(let i=0;i<5;i++){const a=i*Math.PI*2/5;this.sphere(.07,'#78857c',Math.cos(a)*.3,.23,Math.sin(a)*.3,g,1,.6,1);}return g;}
+ chair(x,z,parent=this.scene){const g=this.group(x,0,z,parent);g.userData.dynamic=true;this.cylinder(.06,.07,.45,'#7c8980',0,.49,0,g);this.cylinder(.31,.31,.05,'#839088',0,.26,0,g);this.box(.62,.13,.61,'#6d7e73',0,.78,0,g,.05);const back=this.box(.6,.58,.12,'#75867b',0,1.13,.27,g,.06);back.rotation.x=-.08;this.box(.05,.33,.05,'#7e8980',-.32,.91,.06,g);this.box(.05,.33,.05,'#7e8980',.32,.91,.06,g);this.box(.07,.055,.3,'#63766b',-.32,1.08,.04,g,.02);this.box(.07,.055,.3,'#63766b',.32,1.08,.04,g,.02);for(let i=0;i<5;i++){const a=i*Math.PI*2/5;this.sphere(.07,'#78857c',Math.cos(a)*.3,.23,Math.sin(a)*.3,g,1,.6,1);}this.bake(g);return g;}
  cup(x,y,z,color,parent=this.scene){this.cylinder(.075,.062,.15,color,x,y+.075,z,parent);this.cylinder(.059,.059,.006,'#947d5d',x,y+.153,z,parent);const handle=new THREE.Mesh(new THREE.TorusGeometry(.042,.013,5,12),this.mat(color));handle.position.set(x+.075,y+.08,z);parent.add(handle);}
  sofa(x,z){const g=this.group(x,0,z);this.box(2.65,.4,.96,'#99b2a0',0,.52,0,g,.12);this.box(2.65,.85,.23,'#a2b9a6',0,.93,-.44,g,.1);this.box(.25,.6,1.1,'#a6bda8',-1.34,.76,0,g,.08);this.box(.25,.6,1.1,'#a6bda8',1.34,.76,0,g,.08);for(let i=0;i<3;i++)this.box(.79,.17,.83,'#b2c4af',-.84+i*.84,.8,.05,g,.07);for(const px of [-1.1,1.1])for(const pz of [-.3,.3])this.cylinder(.05,.065,.25,'#b4a283',px,.27,pz,g);const pillow=this.box(.46,.46,.19,'#e9dbb6',-.9,1.08,-.17,g,.09);pillow.rotation.z=.2;const pillow2=this.box(.46,.46,.19,'#d8a78a',.95,1.08,-.16,g,.09);pillow2.rotation.z=-.16;}
  coffeeTable(x,z){this.cylinder(.6,.6,.1,'#ead5b0',x,.62,z);this.cylinder(.11,.18,.38,'#c7b28b',x,.38,z);this.box(.3,.035,.4,'#a1b8a4',x+.12,.69,z+.06);this.cup(x-.22,.67,z-.1,'#f2eee0');}
@@ -207,8 +248,8 @@ export class OfficeScene {
   this.box(2.4,.06,1.35,'#6f9f8e',0,top-.03,0,g);this.box(2.4,.008,.02,'#f5f1e4',0,top+.002,0,g);for(const ex of [-1.19,1.19])this.box(.02,.008,1.35,'#f5f1e4',ex,top+.002,0,g);for(const ez of [-.665,.665])this.box(2.4,.008,.02,'#f5f1e4',0,top+.002,ez,g);
   this.box(.025,.15,1.48,'#f5f1e4',0,top+.075,0,g);for(const ez of [-.74,.74])this.cylinder(.018,.018,.18,'#8a8f86',0,top+.07,ez,g,8);
   for(const ex of [-1,1])for(const ez of [-.55,.55])this.box(.06,top-.2,.06,"#7b857d",ex,(top-.2)/2+.13,ez,g);
-  this.ball=new THREE.Mesh(new THREE.SphereGeometry(.045,12,10),this.mat('#f4a35c',.5));this.ball.castShadow=true;this.ball.position.set(x-.45,top+.045,z+.35);this.scene.add(this.ball);
-  this.paddles=[0,1].map(()=>{const p=this.group(0,0,0);const blade=this.cylinder(.1,.1,.02,'#d9645a',0,0,0,p,18);blade.rotation.z=Math.PI/2;this.box(.03,.12,.035,'#c9a77c',0,-.14,0,p);return p;});
+  this.ball=new THREE.Mesh(new THREE.SphereGeometry(.045,12,10),this.mat('#f4a35c',.5));this.ball.castShadow=true;this.ball.userData.dynamic=true;this.ball.position.set(x-.45,top+.045,z+.35);this.scene.add(this.ball);
+  this.paddles=[0,1].map(()=>{const p=this.group(0,0,0);p.userData.dynamic=true;const blade=this.cylinder(.1,.1,.02,'#d9645a',0,0,0,p,18);blade.rotation.z=Math.PI/2;this.box(.03,.12,.035,'#c9a77c',0,-.14,0,p);return p;});
   g.traverse(o=>{if(o.isMesh)o.userData.hotspot="pingpong";});this.pingPong=g;
  }
 
@@ -217,19 +258,21 @@ export class OfficeScene {
   this.sphere(.29,color,0,.45,0,body,.95,1.2,.8);this.sphere(.31,'#f8f5e9',0,.96,0,body,1,1.02,.93);this.sphere(.095,color,-.3,.95,0,body,.65,.85,.9);this.sphere(.095,color,.3,.95,0,body,.65,.85,.9);
   this.sphere(.024,'#46584d',-.105,.99,.276,body,1,1.3,.6);this.sphere(.024,'#46584d',.105,.99,.276,body,1,1.3,.6);this.sphere(.029,'#e7b6a2',-.18,.91,.23,body,1,.45,.35);this.sphere(.029,'#e7b6a2',.18,.91,.23,body,1,.45,.35);this.box(.055,.012,.01,'#b8b9a5',0,.9,.291,body,.005);
   this.sphere(.29,color,0,1.13,-.012,body,1,.43,.95);this.cylinder(.023,.023,.14,color,0,1.32,-.03,body);this.sphere(.05,'#e8d6a0',0,1.41,-.03,body);
-  const leftArm=this.sphere(.09,color,-.29,.45,.08,body,.8,1.8,1);leftArm.rotation.z=-.28;const rightArm=this.sphere(.09,color,.29,.45,.08,body,.8,1.8,1);rightArm.rotation.z=.25;this.sphere(.075,'#f7f2e7',-.32,.29,.1,body);this.sphere(.075,'#f7f2e7',.32,.29,.1,body);
+  const leftArm=this.sphere(.09,color,-.29,.45,.08,body,.8,1.8,1);leftArm.rotation.z=-.28;const rightArm=this.sphere(.09,color,.29,.45,.08,body,.8,1.8,1);rightArm.rotation.z=.25;leftArm.userData.dynamic=rightArm.userData.dynamic=true;this.sphere(.075,'#f7f2e7',-.32,.29,.1,body);this.sphere(.075,'#f7f2e7',.32,.29,.1,body);
   this.sphere(.1,color,-.13,.18,.07,body,.8,1.5,.85);this.sphere(.1,color,.13,.18,.07,body,.8,1.5,.85);this.sphere(.09,'#f4efe1',-.13,.06,.13,body,1,.6,1.4);this.sphere(.09,'#f4efe1',.13,.06,.13,body,1,.6,1.4);
   this.sphere(.055,'#e6d9b6',0,.52,.23,body,1,1,.35);
   const ring=new THREE.Mesh(new THREE.RingGeometry(.47,.51,40),new THREE.MeshBasicMaterial({color:'#dbad6e',transparent:true,opacity:.8,side:THREE.DoubleSide}));ring.rotation.x=-Math.PI/2;ring.position.y=.01;ring.visible=false;group.add(ring);
   const label=document.createElement('button');label.className='agent-label';label.dataset.agentId=agent.id;label.setAttribute('aria-label',`查看 ${agent.name}`);label.addEventListener('click',e=>{e.stopPropagation();this.hop(agent.id);this.select(agent.id);this.onSelect(agent.id);});this.labels.appendChild(label);
-  group.traverse(o=>{if(o.isMesh)o.userData.agentId=agent.id;});
+  group.traverse(o=>{if(o.isMesh)o.userData.agentId=agent.id;});this.bake(body);
   const obj={id:agent.id,group,body,ring,label,phase:index*1.7,leftArm,rightArm,pos:new THREE.Vector3(),yaw:0,targetYaw:0,path:[],spot:null,walkPhase:0,hopAt:-9,completed:agent.completed||0,status:agent.status};this.characters.set(agent.id,obj);return obj;
  }
  updateAgents(agents){
   this.agents=assignSeats(agents);
+  const isOffline=a=>('lastSeen' in a)&&(!a.lastSeen||Date.now()-a.lastSeen>300000);
+  const signature=JSON.stringify(this.agents.map(a=>[a.id,a.name,a.model,a.status,a.seatId,a.completed||0,isOffline(a),!a.lastSeen]));
+  if(signature===this.agentSignature)return;this.agentSignature=signature;
   const ids=new Set(agents.map(a=>a.id));
   for(const [id,obj]of this.characters){if(!ids.has(id)){obj.label.remove();this.scene.remove(obj.group);obj.group.traverse(o=>{if(o.isMesh)o.geometry.dispose();});this.characters.delete(id);}}
-  const isOffline=a=>('lastSeen' in a)&&(!a.lastSeen||Date.now()-a.lastSeen>300000);
   // Desks follow their owners: name plate, chair pulled out, screen and lamp.
   for(const desk of DESKS){
    const station=this.workstations.get(desk.id),owner=this.agents.find(a=>a.seatId===desk.id),offline=owner&&isOffline(owner);
@@ -271,8 +314,8 @@ export class OfficeScene {
  hop(id){const obj=this.characters.get(id);if(obj)obj.hopAt=this.clock.getElapsedTime();}
  refreshLights(){
   for(const station of this.workstations.values())station.bulb.material.emissiveIntensity=this.night&&station.present?2.6:0;
-  for(const pod of this.podLights){const lit=[...this.workstations.values()].some(s=>s.present&&Math.abs(s.desk.x-pod.x)<2.5&&Math.abs(s.desk.z-pod.z)<2);pod.light.intensity=this.night&&lit?26:0;}
-  this.loungeLight.intensity=this.night?18:0;
+  for(const pod of this.podLights){const lit=[...this.workstations.values()].some(s=>s.present&&Math.abs(s.desk.x-pod.x)<2.5&&Math.abs(s.desk.z-pod.z)<2);pod.light.intensity=this.night&&lit?26:0;pod.light.visible=this.night;}
+  this.loungeLight.intensity=this.night?18:0;this.loungeLight.visible=this.night;
  }
 
  resize(){const w=this.container.clientWidth,h=this.container.clientHeight;if(!w||!h)return;for(const label of this.labels.children)label.labelWidth=0;this.renderer.setSize(w,h,false);const aspect=w/h;const worldWidth=aspect<1?29:31;const height=Math.max(21,worldWidth/aspect);this.camera.left=-height*aspect/2;this.camera.right=height*aspect/2;this.camera.top=height/2;this.camera.bottom=-height/2;this.camera.updateProjectionMatrix();}
@@ -291,7 +334,7 @@ export class OfficeScene {
  // Project every label, then let the ones further back step upward until nothing overlaps.
  layoutLabels(){
   const w=this.container.clientWidth,h=this.container.clientHeight,items=[];
-  const add=(label,x3,y3,z3)=>{const p=this.labelAnchor.set(x3,y3,z3).project(this.camera),x=(p.x*.5+.5)*w,y=(-p.y*.5+.5)*h,visible=!(p.z>1||p.z< -1||x<10||x>w-10||y<64||y>h-58);label.style.visibility=visible?'visible':'hidden';if(!visible)return;if(!label.labelWidth){label.labelWidth=label.offsetWidth||60;label.labelHeight=label.offsetHeight||26;}items.push({label,x,y,z:p.z,width:label.labelWidth,height:label.labelHeight});};
+  const add=(label,x3,y3,z3)=>{const p=this.labelAnchor.set(x3,y3,z3).project(this.camera),x=(p.x*.5+.5)*w,y=(-p.y*.5+.5)*h,visible=!(p.z>1||p.z< -1||x<10||x>w-10||y<64||y>h-58);if(label.labelVisible!==visible){label.labelVisible=visible;label.style.visibility=visible?'visible':'hidden';}if(!visible)return;if(!label.labelWidth){label.labelWidth=label.offsetWidth||60;label.labelHeight=label.offsetHeight||26;}items.push({label,x,y,z:p.z,width:label.labelWidth,height:label.labelHeight});};
   for(const obj of this.characters.values())add(obj.label,obj.group.position.x,obj.group.position.y+1.72,obj.group.position.z);
   for(const spot of this.hotspots){if(spot.follow)spot.position.set(spot.follow.position.x,1.45,spot.follow.position.z);add(spot.label,spot.position.x,spot.position.y,spot.position.z);}
   items.sort((a,b)=>b.y-a.y);
@@ -299,7 +342,9 @@ export class OfficeScene {
   for(const item of items){
    for(let pass=0;pass<5;pass++){const step=item.height+2,hit=placed.find(o=>Math.abs(o.x-item.x)<(o.width+item.width)/2+4&&Math.abs(o.y-item.y)<step);if(!hit)break;item.y=hit.y-step;}
    placed.push(item);
-   item.label.style.transform=`translate3d(${item.x.toFixed(1)}px,${item.y.toFixed(1)}px,0) translate(-50%,-100%)`;item.label.style.zIndex=String(Math.round(100-item.z*50));
+   const label=item.label,transform=`translate3d(${item.x.toFixed(1)}px,${item.y.toFixed(1)}px,0) translate(-50%,-100%)`,depth=Math.round(100-item.z*50);
+   if(label.labelTransform!==transform){label.labelTransform=transform;label.style.transform=transform;}
+   if(label.labelDepth!==depth){label.labelDepth=depth;label.style.zIndex=String(depth);}
   }
  }
 
@@ -330,8 +375,8 @@ export class OfficeScene {
  }
  // Two resting agents at the table play a rally; otherwise the ball and paddles wait on it.
  animatePingPong(dt,idle){
-  const {x,z,top,paddleX}=PING_PONG,chars=[...this.characters.values()];
-  const players=REST_SPOTS.slice(0,2).map(s=>chars.find(o=>o.spot?.key===s.key&&!o.path.length));
+  const {x,z,top,paddleX}=PING_PONG,players=this.players;players[0]=players[1]=undefined;
+  for(const o of this.characters.values()){if(o.path.length)continue;if(o.spot?.key===REST_SPOTS[0].key)players[0]=o;else if(o.spot?.key===REST_SPOTS[1].key)players[1]=o;}
   if(!players[0]||!players[1]||this.reducedMotion){
    this.ball.position.set(x-.45,top+.045,z+.35);
    this.paddles.forEach((p,i)=>{const hand=players[i];if(hand){p.position.set(paddleX[i],.95,z);p.rotation.set(0,0,0);}else{p.position.set(x+(i?.6:-.6),top+.015,z+(i?-.35:.35));p.rotation.set(0,i?-.5:.5,Math.PI/2);}});
@@ -386,12 +431,17 @@ export class OfficeScene {
    const size=.3*Math.sin(Math.PI*Math.min(1,age/b.life))+.05;b.pieces.forEach(p=>{p.sprite.position.copy(b.origin).addScaledVector(p.velocity,age);p.sprite.position.y-=b.gravity*age*age/2;p.sprite.scale.setScalar(size);});return true;});
  }
 
- animate(){if(document.hidden||this.container.clientWidth===0)return;const t=this.clock.getElapsedTime(),dt=Math.min(.5,t-this.lastTime);this.lastTime=t;
+ animate(){if(document.hidden||this.container.clientWidth===0)return;
+  // The office is meant to stay open all day. Idle motion is gentle, so half the display's
+  // frames are plenty; every frame is drawn again while the camera is dragged or flying.
+  const stamp=performance.now(),busy=this.dragging||this.cameraAnimation||stamp-this.lastCameraMove<400;
+  if(!busy&&stamp-this.lastFrame<30)return;this.lastFrame=stamp;
+  const t=this.clock.getElapsedTime(),dt=Math.min(.5,t-this.lastTime);this.lastTime=t;
   if(this.cameraAnimation){const a=this.cameraAnimation;const p=Math.min(1,(performance.now()-a.start)/(this.reducedMotion?1:700));const ease=1-Math.pow(1-p,3);this.camera.position.lerpVectors(a.from,a.to,ease);this.controls.target.lerpVectors(a.targetFrom,a.targetTo,ease);this.camera.zoom=THREE.MathUtils.lerp(a.zoomFrom,a.zoomTo,ease);this.camera.updateProjectionMatrix();if(p===1)this.cameraAnimation=null;}
   const idle=!this.isPaused&&!this.reducedMotion;
   for(const obj of this.characters.values())this.animateCharacter(obj,t,dt,idle);
   this.animatePingPong(dt,idle);this.animateCat(t,dt);this.animateVacuum(t,dt);this.animateBursts(t);
-  if(idle)for(const station of this.workstations.values())if(station.screen.mode!=='off'&&t-station.screen.drawnAt>.16)this.drawScreen(station.screen,t);
+  if(idle)for(const station of this.workstations.values())if(station.screen.mode!=='off'&&t-station.screen.drawnAt>station.screen.every)this.drawScreen(station.screen,t);
   if(!this.reducedMotion)this.trees.forEach((tree,i)=>tree.rotation.z=Math.sin(t*.6+i*1.3)*.02);
   const now=new Date(),minutes=now.getMinutes()+now.getSeconds()/60;this.clockHands.hour.rotation.z=-((now.getHours()%12)+minutes/60)/12*Math.PI*2;this.clockHands.minute.rotation.z=-minutes/60*Math.PI*2;this.clockHands.second.rotation.z=-(now.getSeconds()+now.getMilliseconds()/1000)/60*Math.PI*2;
   this.layoutLabels();

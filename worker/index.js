@@ -221,7 +221,14 @@ export function createWorker(assets={}){return {async fetch(request,env){
    }return json({error:'Method not allowed.'},405);
   }
   const asset=assets[url.pathname==='/'?'/index.html':url.pathname];
-  if(asset&&['GET','HEAD'].includes(request.method))return new Response(request.method==='HEAD'?null:asset.body,{headers:{'Content-Type':asset.type,'Cache-Control':'no-cache','X-Content-Type-Options':'nosniff'}});
+  if(asset&&['GET','HEAD'].includes(request.method)){
+   // Browsers revalidate assets on every load (no-cache). With an ETag an unchanged file
+   // answers 304 instead of being sent again; Three.js alone is over a megabyte.
+   const headers={'Content-Type':asset.type,'Cache-Control':'no-cache','X-Content-Type-Options':'nosniff',...(asset.etag?{'ETag':asset.etag}:{})};
+   const known=(request.headers.get('if-none-match')||'').split(',').map(tag=>tag.trim().replace(/^W\//,''));
+   if(asset.etag&&known.includes(asset.etag))return new Response(null,{status:304,headers});
+   return new Response(request.method==='HEAD'?null:asset.body,{headers});
+  }
   return json({error:'Not found.'},404);
  }catch(e){return json({error:e instanceof Problem?e.message:'Unable to access office storage.'},e.status||500);}
 }};}
