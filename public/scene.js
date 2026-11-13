@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import {OrbitControls} from './vendor/OrbitControls.js';
 import {MODELS} from './data.js';
 import {DESKS,assignSeats,seatOf} from './layout.js';
+import {CAMERA_LIMITS,CAMERA_PRESETS,cameraFrame,boundedZoom,orbitPosition} from './camera.js';
 
 // People, the cat and the vacuum move along these floor lanes so nobody walks through a desk.
 const FLOOR_Y=.17, AISLE_X=3, WALK_SPEED=2.4;
@@ -42,21 +43,48 @@ function route(from,to){
 }
 
 export class OfficeScene {
- constructor(container,labels,onSelect,onZoom,onDesk,onActivity){
+ constructor(container,labels,onSelect,onZoom,onDesk,onActivity,onViewChange){
+  this.onViewChange=onViewChange;this.dragMode='rotate';
   this.onDesk=onDesk;this.onActivity=onActivity;this.workstations=new Map();this.hotspots=[];this.effects={};this.container=container;this.labels=labels;this.onSelect=onSelect;this.onZoom=onZoom;this.characters=new Map();this.clock=new THREE.Clock();this.reducedMotion=matchMedia('(prefers-reduced-motion: reduce)').matches;this.isPaused=false;this.night=false;this.labelAnchor=new THREE.Vector3();this.dragging=false;this.lastCameraMove=0;this.lastFrame=0;this.agentSignature='';
   this.trees=[];this.bursts=[];this.spriteMaterials=new Map();this.podLights=[];this.step=new THREE.Vector3();this.lastTime=0;this.rallyTime=0;this.players=[undefined,undefined];
   this.scene=new THREE.Scene();
-  this.camera=new THREE.OrthographicCamera(-10,10,8,-8,.1,150);this.camera.position.set(14,14,17);
-  this.renderer=new THREE.WebGLRenderer({antialias:true,alpha:true,powerPreference:'low-power'});this.renderer.setClearColor(0x000000,0);this.renderer.setPixelRatio(Math.min(devicePixelRatio,1.7));this.renderer.shadowMap.enabled=true;this.renderer.shadowMap.type=THREE.PCFSoftShadowMap;this.renderer.outputColorSpace=THREE.SRGBColorSpace;this.renderer.toneMapping=THREE.ACESFilmicToneMapping;this.renderer.toneMappingExposure=1.28;container.appendChild(this.renderer.domElement);
-  this.controls=new OrbitControls(this.camera,this.renderer.domElement);this.controls.target.set(0,.4,0);this.controls.enableDamping=true;this.controls.dampingFactor=.075;this.controls.enablePan=true;this.controls.minPolarAngle=.15;this.controls.maxPolarAngle=Math.PI/2.3;this.controls.minZoom=.55;this.controls.maxZoom=2.5;this.controls.maxDistance=45;this.controls.touches={ONE:THREE.TOUCH.ROTATE,TWO:THREE.TOUCH.DOLLY_PAN};this.controls.update();
+  this.camera=new THREE.OrthographicCamera(-10,10,8,-8,.1,150);this.camera.position.set(...CAMERA_PRESETS.overview.pos);
+  this.renderer=new THREE.WebGLRenderer({antialias:true,alpha:true,powerPreference:'low-power'});this.renderer.setClearColor(0x000000,0);this.renderer.setPixelRatio(Math.min(devicePixelRatio,2));this.renderer.shadowMap.enabled=true;this.renderer.shadowMap.type=THREE.PCFSoftShadowMap;this.renderer.outputColorSpace=THREE.SRGBColorSpace;this.renderer.toneMapping=THREE.ACESFilmicToneMapping;this.renderer.toneMappingExposure=1;container.appendChild(this.renderer.domElement);
+  this.controls=new OrbitControls(this.camera,this.renderer.domElement);
+  this.controls.target.set(...CAMERA_PRESETS.overview.target);this.controls.enableDamping=true;this.controls.dampingFactor=.09;
+  this.controls.enablePan=true;this.controls.rotateSpeed=.65;this.controls.zoomSpeed=.8;this.controls.panSpeed=.8;
+  Object.assign(this.controls,{minPolarAngle:CAMERA_LIMITS.minPolar,maxPolarAngle:CAMERA_LIMITS.maxPolar,minZoom:CAMERA_LIMITS.minZoom,maxZoom:CAMERA_LIMITS.maxZoom});
+  this.controls.touches={ONE:THREE.TOUCH.ROTATE,TWO:THREE.TOUCH.DOLLY_PAN};this.controls.update();
+  this.controls.addEventListener('start',()=>{this.cameraAnimation=null;this.dragging=true;this.onViewChange?.(null);});
+  this.controls.addEventListener('end',()=>{this.dragging=false;});
+  this.renderer.domElement.tabIndex=0;
+  this.renderer.domElement.setAttribute('aria-label','旋转和平移办公室');
+  this.renderer.domElement.setAttribute('aria-describedby','camera-help');
+  this.renderer.domElement.addEventListener('keydown',event=>{
+   if(event.altKey||event.ctrlKey||event.metaKey)return;
+   const steps={ArrowLeft:[-.2,0],ArrowRight:[.2,0],ArrowUp:[0,-.15],ArrowDown:[0,.15]};
+   if(steps[event.key])this.orbit(...steps[event.key]);
+   else if(event.key==='+'||event.key==='=')this.zoom(.15);
+   else if(event.key==='-')this.zoom(-.15);
+   else if(event.key==='0')this.setView('overview');
+   else return;
+   event.preventDefault();event.stopPropagation();
+  });
   this.controls.addEventListener('change',()=>{this.lastCameraMove=performance.now();this.onZoom?.(Math.round(this.camera.zoom*100));});
-  this.hemi=new THREE.HemisphereLight(0xfff9e6,0xb4c49d,3.1);this.scene.add(this.hemi);
-  this.sun=new THREE.DirectionalLight(0xfff5dd,4.4);this.sun.position.set(-5,20,12);this.sun.castShadow=true;this.sun.shadow.mapSize.set(2048,2048);Object.assign(this.sun.shadow.camera,{left:-19,right:19,top:19,bottom:-19,near:1,far:60});this.sun.shadow.normalBias=.045;this.sun.shadow.bias=-.0003;this.sun.shadow.radius=4;this.scene.add(this.sun);
-  this.fill=new THREE.DirectionalLight(0xe2eeff,1.2);this.fill.position.set(8,7,-7);this.scene.add(this.fill);
+  this.hemi=new THREE.HemisphereLight(0xfff9e6,0xb4c49d,2.2);this.scene.add(this.hemi);
+  this.sun=new THREE.DirectionalLight(0xfff5dd,3.1);this.sun.position.set(-5,20,12);this.sun.castShadow=true;this.sun.shadow.mapSize.set(2048,2048);Object.assign(this.sun.shadow.camera,{left:-19,right:19,top:19,bottom:-19,near:1,far:60});this.sun.shadow.normalBias=.045;this.sun.shadow.bias=-.0003;this.sun.shadow.radius=4;this.scene.add(this.sun);
+  this.fill=new THREE.DirectionalLight(0xe2eeff,.9);this.fill.position.set(8,7,-7);this.scene.add(this.fill);
   this.materialCache=new Map();this.meshes=[];
   this.buildOffice();this.resizeObserver=new ResizeObserver(()=>this.resize());this.resizeObserver.observe(container);this.resize();
-  this.pointerStart=null;container.addEventListener('pointerdown',e=>{this.pointerStart={x:e.clientX,y:e.clientY};this.cameraAnimation=null;this.dragging=true;});container.addEventListener('pointerup',e=>{if(this.pointerStart&&Math.hypot(e.clientX-this.pointerStart.x,e.clientY-this.pointerStart.y)<5)this.pick(e);});
-  for(const type of ['pointerup','pointercancel','blur'])window.addEventListener(type,()=>{this.dragging=false;});
+  this.pointerStart=null;
+  container.addEventListener('pointerdown',event=>{
+   this.cameraAnimation=null;
+   this.pointerStart=event.isPrimary&&event.button===0?{id:event.pointerId,x:event.clientX,y:event.clientY,moved:false}:null;
+  });
+  container.addEventListener('pointermove',event=>{const p=this.pointerStart;if(p&&p.id===event.pointerId&&Math.hypot(event.clientX-p.x,event.clientY-p.y)>5)p.moved=true;});
+  container.addEventListener('pointerup',event=>{const p=this.pointerStart;this.pointerStart=null;if(p&&p.id===event.pointerId&&!p.moved&&Math.hypot(event.clientX-p.x,event.clientY-p.y)<5)this.pick(event);});
+  container.addEventListener('pointercancel',()=>{this.pointerStart=null;});
+  for(const type of ['pointerup','pointercancel','blur'])window.addEventListener(type,()=>{this.dragging=false;this.pointerStart=null;});
   this.animate=this.animate.bind(this);this.renderer.setAnimationLoop(this.animate);
  }
  mat(color,roughness=.75){const key=color+':'+roughness;if(!this.materialCache.has(key)){const m=new THREE.MeshStandardMaterial({color,roughness});m.userData.bake=true;this.materialCache.set(key,m);}return this.materialCache.get(key);}
@@ -297,7 +325,7 @@ export class OfficeScene {
    obj.completed=a.completed||0;obj.status=a.status;
    const offline=isOffline(a);
    const dot=document.createElement('span');dot.className='label-color';dot.style.background=MODELS[a.model].color;
-   const name=document.createElement('span');name.textContent=a.name;
+   const name=document.createElement('span');name.className='label-name';name.textContent=a.name;
    const suffix=document.createElement('span');suffix.className=a.status==='working'&&!offline?'label-busy':'label-sleep';
    if(a.status==='working'&&!offline){for(let j=0;j<3;j++)suffix.appendChild(document.createElement('i'));}
    else suffix.textContent=offline?(!a.lastSeen?'待连':'离线'):a.status==='thinking'?'···':'zᶻ';
@@ -318,11 +346,27 @@ export class OfficeScene {
   this.loungeLight.intensity=this.night?18:0;this.loungeLight.visible=this.night;
  }
 
- resize(){const w=this.container.clientWidth,h=this.container.clientHeight;if(!w||!h)return;for(const label of this.labels.children)label.labelWidth=0;this.renderer.setSize(w,h,false);const aspect=w/h;const worldWidth=aspect<1?29:31;const height=Math.max(21,worldWidth/aspect);this.camera.left=-height*aspect/2;this.camera.right=height*aspect/2;this.camera.top=height/2;this.camera.bottom=-height/2;this.camera.updateProjectionMatrix();}
- setView(view){const presets={overview:{pos:[14,14,17],target:[0,.4,0],zoom:1},work:{pos:[9,14,14.3],target:[-4.5,.6,.3],zoom:1.4},lounge:{pos:[13,10,14],target:[7.4,.6,-.3],zoom:2},top:{pos:[.01,22,1],target:[0,0,0],zoom:1.03}};const p=presets[view]||presets.overview;this.cameraAnimation={from:this.camera.position.clone(),to:new THREE.Vector3(...p.pos),targetFrom:this.controls.target.clone(),targetTo:new THREE.Vector3(...p.target),zoomFrom:this.camera.zoom,zoomTo:p.zoom,start:performance.now()};}
- zoom(delta){this.cameraAnimation=null;this.camera.zoom=THREE.MathUtils.clamp(this.camera.zoom+delta,.55,2.5);this.camera.updateProjectionMatrix();this.onZoom?.(Math.round(this.camera.zoom*100));}
+ resize(){
+  const w=this.container.clientWidth,h=this.container.clientHeight;if(!w||!h)return;
+  for(const label of this.labels.children)label.labelWidth=0;
+  this.renderer.setSize(w,h,false);Object.assign(this.camera,cameraFrame(w,h));this.camera.updateProjectionMatrix();
+ }
+ settleCamera(){const damping=this.controls.enableDamping;this.controls.enableDamping=false;this.controls.update();this.controls.enableDamping=damping;this.cameraAnimation=null;}
+ setView(view){
+  this.settleCamera();const p=CAMERA_PRESETS[view]||CAMERA_PRESETS.overview;
+  this.cameraAnimation={from:this.camera.position.clone(),to:new THREE.Vector3(...p.pos),targetFrom:this.controls.target.clone(),targetTo:new THREE.Vector3(...p.target),zoomFrom:this.camera.zoom,zoomTo:p.zoom,start:performance.now()};
+  this.onViewChange?.(view);
+ }
+ setZoom(value){this.settleCamera();this.camera.zoom=boundedZoom(value);this.camera.updateProjectionMatrix();this.controls.update();this.onZoom?.(Math.round(this.camera.zoom*100));this.onViewChange?.(null);}
+ zoom(delta){this.setZoom(this.camera.zoom+delta);}
+ orbit(horizontal,vertical){this.settleCamera();this.camera.position.copy(orbitPosition(this.camera.position,this.controls.target,horizontal,vertical));this.controls.update();this.onViewChange?.(null);}
+ setDragMode(mode){
+  this.dragMode=mode;const pan=mode==='pan';this.container.dataset.dragMode=mode;
+  this.controls.mouseButtons.LEFT=pan?THREE.MOUSE.PAN:THREE.MOUSE.ROTATE;
+  this.controls.touches.ONE=pan?THREE.TOUCH.PAN:THREE.TOUCH.ROTATE;
+ }
  select(id){for(const [key,o]of this.characters){o.ring.visible=key===id;o.label.classList.toggle('selected',key===id);}}
- setNight(night){this.night=night;this.ground.material.opacity=night?.34:.13;this.hemi.intensity=night?1.4:3.1;this.sun.intensity=night?1.4:4.4;this.sun.color.set(night?'#e8d6ba':'#fff5dd');this.fill.intensity=night?2:1.2;this.fill.color.set(night?'#94a4e4':'#e2eeff');this.refreshLights();}
+ setNight(night){this.night=night;this.ground.material.opacity=night?.34:.13;this.hemi.intensity=night?1.4:2.2;this.sun.intensity=night?1.4:3.1;this.sun.color.set(night?'#e8d6ba':'#fff5dd');this.fill.intensity=night?2:.9;this.fill.color.set(night?'#94a4e4':'#e2eeff');this.refreshLights();}
  setPaused(paused){this.isPaused=paused;this.labels.classList.toggle('paused',paused);this.labels.querySelectorAll('.label-busy i').forEach(e=>e.style.animationPlayState=paused?'paused':'running');}
  pick(event){
   const bounds=this.container.getBoundingClientRect();const mouse=new THREE.Vector2((event.clientX-bounds.left)/bounds.width*2-1,-(event.clientY-bounds.top)/bounds.height*2+1);const ray=new THREE.Raycaster();ray.setFromCamera(mouse,this.camera);
@@ -334,14 +378,17 @@ export class OfficeScene {
  // Project every label, then let the ones further back step upward until nothing overlaps.
  layoutLabels(){
   const w=this.container.clientWidth,h=this.container.clientHeight,items=[];
-  const add=(label,x3,y3,z3)=>{const p=this.labelAnchor.set(x3,y3,z3).project(this.camera),x=(p.x*.5+.5)*w,y=(-p.y*.5+.5)*h,visible=!(p.z>1||p.z< -1||x<10||x>w-10||y<64||y>h-58);if(label.labelVisible!==visible){label.labelVisible=visible;label.style.visibility=visible?'visible':'hidden';}if(!visible)return;if(!label.labelWidth){label.labelWidth=label.offsetWidth||60;label.labelHeight=label.offsetHeight||26;}items.push({label,x,y,z:p.z,width:label.labelWidth,height:label.labelHeight});};
+  const setVisible=(label,visible)=>{if(label.labelVisible!==visible){label.labelVisible=visible;label.style.visibility=visible?'visible':'hidden';}};
+  const add=(label,x3,y3,z3)=>{const p=this.labelAnchor.set(x3,y3,z3).project(this.camera),x=(p.x*.5+.5)*w,y=(-p.y*.5+.5)*h,visible=!(p.z>1||p.z< -1||x<10||x>w-10||y<76||y>h-12);if(!visible){setVisible(label,false);return;}if(!label.labelWidth){label.labelWidth=label.offsetWidth||60;label.labelHeight=label.offsetHeight||26;}items.push({label,x,y,z:p.z,width:label.labelWidth,height:label.labelHeight});};
   for(const obj of this.characters.values())add(obj.label,obj.group.position.x,obj.group.position.y+1.72,obj.group.position.z);
   for(const spot of this.hotspots){if(spot.follow)spot.position.set(spot.follow.position.x,1.45,spot.follow.position.z);add(spot.label,spot.position.x,spot.position.y,spot.position.z);}
   items.sort((a,b)=>b.y-a.y);
   const placed=[];
   for(const item of items){
+   item.x=THREE.MathUtils.clamp(item.x,item.width/2+8,w-item.width/2-8);
    for(let pass=0;pass<5;pass++){const step=item.height+2,hit=placed.find(o=>Math.abs(o.x-item.x)<(o.width+item.width)/2+4&&Math.abs(o.y-item.y)<step);if(!hit)break;item.y=hit.y-step;}
-   placed.push(item);
+   if(item.y-item.height<62){setVisible(item.label,false);continue;}
+   setVisible(item.label,true);placed.push(item);
    const label=item.label,transform=`translate3d(${item.x.toFixed(1)}px,${item.y.toFixed(1)}px,0) translate(-50%,-100%)`,depth=Math.round(100-item.z*50);
    if(label.labelTransform!==transform){label.labelTransform=transform;label.style.transform=transform;}
    if(label.labelDepth!==depth){label.labelDepth=depth;label.style.zIndex=String(depth);}
@@ -437,17 +484,17 @@ export class OfficeScene {
   const stamp=performance.now(),busy=this.dragging||this.cameraAnimation||stamp-this.lastCameraMove<400;
   if(!busy&&stamp-this.lastFrame<30)return;this.lastFrame=stamp;
   const t=this.clock.getElapsedTime(),dt=Math.min(.5,t-this.lastTime);this.lastTime=t;
-  if(this.cameraAnimation){const a=this.cameraAnimation;const p=Math.min(1,(performance.now()-a.start)/(this.reducedMotion?1:700));const ease=1-Math.pow(1-p,3);this.camera.position.lerpVectors(a.from,a.to,ease);this.controls.target.lerpVectors(a.targetFrom,a.targetTo,ease);this.camera.zoom=THREE.MathUtils.lerp(a.zoomFrom,a.zoomTo,ease);this.camera.updateProjectionMatrix();if(p===1)this.cameraAnimation=null;}
+  if(this.cameraAnimation){const a=this.cameraAnimation;const p=Math.min(1,(performance.now()-a.start)/(this.reducedMotion?1:700));const ease=1-Math.pow(1-p,3);this.camera.position.lerpVectors(a.from,a.to,ease);this.controls.target.lerpVectors(a.targetFrom,a.targetTo,ease);this.camera.zoom=THREE.MathUtils.lerp(a.zoomFrom,a.zoomTo,ease);this.camera.updateProjectionMatrix();this.onZoom?.(Math.round(this.camera.zoom*100));if(p===1)this.cameraAnimation=null;}
   const idle=!this.isPaused&&!this.reducedMotion;
   for(const obj of this.characters.values())this.animateCharacter(obj,t,dt,idle);
   this.animatePingPong(dt,idle);this.animateCat(t,dt);this.animateVacuum(t,dt);this.animateBursts(t);
   if(idle)for(const station of this.workstations.values())if(station.screen.mode!=='off'&&t-station.screen.drawnAt>station.screen.every)this.drawScreen(station.screen,t);
   if(!this.reducedMotion)this.trees.forEach((tree,i)=>tree.rotation.z=Math.sin(t*.6+i*1.3)*.02);
   const now=new Date(),minutes=now.getMinutes()+now.getSeconds()/60;this.clockHands.hour.rotation.z=-((now.getHours()%12)+minutes/60)/12*Math.PI*2;this.clockHands.minute.rotation.z=-minutes/60*Math.PI*2;this.clockHands.second.rotation.z=-(now.getSeconds()+now.getMilliseconds()/1000)/60*Math.PI*2;
-  this.layoutLabels();
+  this.controls.update();this.layoutLabels();
   const coffeeAge=t-(this.effects.coffee??-100),partyAge=t-(this.effects.celebrate??-100);
   this.steam.children.forEach(p=>{const q=this.reducedMotion?p.userData.phase:(t*.5+p.userData.phase)%1;p.position.set(Math.sin(q*5)*.12,q*.85,0);p.material.opacity=coffeeAge<6?(1-q)*.6:0;});
   if(partyAge<4.5){this.confetti.children.forEach(piece=>{const d=piece.userData;piece.position.set(d.x,Math.max(.3,6-(((this.reducedMotion?0:partyAge)+d.phase)*1.9)%6),d.z);if(!this.reducedMotion)piece.rotation.set(t*2+d.phase,t*1.4,d.phase);});}else this.confetti.visible=false;
-  this.controls.update();this.renderer.render(this.scene,this.camera);
+  this.renderer.render(this.scene,this.camera);
  }
 }

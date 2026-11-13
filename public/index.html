@@ -42,6 +42,11 @@
     <symbol id="i-send" viewBox="0 0 24 24"><path d="m22 2-7 20-4-9L2 9 22 2Z M11 13 22 2"/></symbol>
     <symbol id="i-hash" viewBox="0 0 24 24"><path d="M9.5 3 7.5 21 M16.5 3l-2 18 M4 9h17 M3 15h17"/></symbol>
     <symbol id="i-link" viewBox="0 0 24 24"><path d="M10 14a4 4 0 0 0 5.7 0l3-3A4 4 0 0 0 13 5.3l-1 1 M14 10a4 4 0 0 0-5.7 0l-3 3A4 4 0 0 0 11 18.7l1-1"/></symbol>
+    <symbol id="i-rotate-left" viewBox="0 0 24 24"><path d="M4 10a8 8 0 1 1 2 8 M4 4v6h6"/></symbol>
+    <symbol id="i-rotate-right" viewBox="0 0 24 24"><path d="M20 10a8 8 0 1 0-2 8 M20 4v6h-6"/></symbol>
+    <symbol id="i-up" viewBox="0 0 24 24"><path d="m6 14 6-6 6 6"/></symbol>
+    <symbol id="i-move" viewBox="0 0 24 24"><path d="M12 3v18 M3 12h18 M9 6l3-3 3 3 M9 18l3 3 3-3 M6 9l-3 3 3 3 M18 9l3 3-3 3"/></symbol>
+    <symbol id="i-eye" viewBox="0 0 24 24"><path d="M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12Z"/><circle cx="12" cy="12" r="3"/></symbol>
   </svg>
   <a class="skip-link" href="#stage">跳到主要内容</a>
 
@@ -67,37 +72,54 @@
     <main class="stage" id="stage" tabindex="-1">
       <section class="space" id="space-panel" aria-label="3D 办公空间">
         <h1 class="sr-only">AI 办公室</h1>
-        <div id="canvas-container" role="img" aria-label="可旋转的 3D 办公室。成员也可以在右侧名单里选择。"></div>
-        <div id="agent-labels" class="agent-labels"></div>
-        <div class="scene-top">
-          <div class="float segmented" role="group" aria-label="切换视角">
-            <button data-camera="overview" aria-pressed="true">全景</button>
-            <button data-camera="work" aria-pressed="false">工位</button>
-            <button data-camera="lounge" aria-pressed="false">休息区</button>
-            <button data-camera="top" aria-pressed="false">俯瞰</button>
+        <div class="scene-viewport">
+          <div id="canvas-container" role="group" aria-label="可旋转的 3D 办公室"></div>
+          <div id="agent-labels" class="agent-labels"></div>
+          <div class="scene-top">
+            <div class="float segmented" role="group" aria-label="切换视角">
+              <button data-camera="overview" aria-pressed="true">全景</button>
+              <button data-camera="work" aria-pressed="false">工位</button>
+              <button data-camera="lounge" aria-pressed="false">休息区</button>
+              <button data-camera="top" aria-pressed="false">俯瞰</button>
+            </div>
+            <div class="float scene-tools">
+              <button class="tool-button" id="desks-btn" aria-label="工位管理"><svg><use href="#i-grid"/></svg><span>工位</span><b id="desk-count">8 / 16</b></button>
+              <button class="icon-button" id="expand-btn" title="展开办公室" aria-label="展开办公室" aria-expanded="false"><svg><use href="#i-expand"/></svg></button>
+            </div>
           </div>
-          <div class="float scene-tools">
-            <button class="tool-button" id="desks-btn" aria-label="工位管理"><svg><use href="#i-grid"/></svg><span>工位</span><b id="desk-count">8 / 16</b></button>
-            <button class="icon-button" id="expand-btn" title="展开办公室" aria-label="展开办公室"><svg><use href="#i-expand"/></svg></button>
+          <div class="scene-loading" id="scene-loading"><span class="loader-orbit"></span><p>正在打开办公室</p></div>
+          <p id="office-moment" class="office-moment" role="status"></p>
+        </div>
+        <div class="camera-dock" aria-label="视角控制">
+          <div class="camera-caption"><span>视角 <strong id="camera-view-name">全景</strong></span><p id="camera-help">拖动旋转 · 滚轮 / 双指缩放</p></div>
+          <div class="camera-tools">
+            <div class="camera-orbit" role="group" aria-label="旋转与俯仰">
+              <button class="icon-button" data-orbit="left" aria-label="向左旋转" title="向左旋转（←）"><svg><use href="#i-rotate-left"/></svg></button>
+              <button class="icon-button" data-orbit="right" aria-label="向右旋转" title="向右旋转（→）"><svg><use href="#i-rotate-right"/></svg></button>
+              <button class="icon-button" data-orbit="up" aria-label="俯视一点" title="俯视一点（↑）"><svg><use href="#i-up"/></svg></button>
+              <button class="icon-button" data-orbit="down" aria-label="平视一点" title="平视一点（↓）"><svg><use href="#i-down"/></svg></button>
+            </div>
+            <div class="camera-options">
+              <button class="tool-button" id="pan-toggle" aria-pressed="false" aria-label="平移画面" title="开启后拖动可移动画面"><svg><use href="#i-move"/></svg><span>平移</span></button>
+              <button class="tool-button" id="labels-toggle" aria-pressed="true" aria-label="显示场景标签" title="显示或隐藏成员名称"><svg><use href="#i-eye"/></svg><span>名称</span></button>
+            </div>
+            <div class="zoom-controls" role="group" aria-label="缩放与复位">
+              <button class="icon-button" id="zoom-out" aria-label="缩小" title="缩小（−）"><svg><use href="#i-minus"/></svg></button>
+              <input id="zoom-slider" type="range" min="50" max="320" step="1" value="100" aria-label="视图缩放" aria-valuetext="100%">
+              <output id="zoom-value" for="zoom-slider">100%</output>
+              <button class="icon-button" id="zoom-in" aria-label="放大" title="放大（+）"><svg><use href="#i-plus"/></svg></button>
+              <button class="tool-button" id="reset-view" aria-label="重置视角" title="回到全景（0）"><svg><use href="#i-reset"/></svg><span>复位</span></button>
+            </div>
           </div>
         </div>
-        <div class="scene-loading" id="scene-loading"><span class="loader-orbit"></span><p>正在打开办公室</p></div>
-        <p id="office-moment" class="office-moment" role="status"></p>
-        <div class="scene-bottom">
-          <div class="float rituals" id="office-life" role="group" aria-label="办公室小日常">
+        <div class="office-utilities">
+          <span class="scene-hint">点伙伴开始对话</span>
+          <div class="rituals" id="office-life" role="group" aria-label="办公室小日常">
             <button data-office-activity="coffee" title="来杯咖啡"><svg><use href="#i-coffee"/></svg><span>咖啡</span></button>
             <button data-office-activity="cat" title="摸摸小猫"><svg><use href="#i-cat"/></svg><span>小猫</span></button>
             <button data-office-activity="celebrate" title="庆祝一下"><svg><use href="#i-spark"/></svg><span>庆祝</span></button>
             <i class="float-divider"></i>
             <button id="focus-btn" aria-pressed="false"><svg><use href="#i-clock"/></svg><span id="focus-time">专注 25 分钟</span></button>
-          </div>
-          <p class="scene-hint">拖动旋转 · 滚轮缩放 · 点伙伴开始对话</p>
-          <div class="float zoom-controls">
-            <button class="icon-button" id="zoom-out" aria-label="缩小" title="缩小"><svg><use href="#i-minus"/></svg></button>
-            <span id="zoom-value">100%</span>
-            <button class="icon-button" id="zoom-in" aria-label="放大" title="放大"><svg><use href="#i-plus"/></svg></button>
-            <i class="float-divider"></i>
-            <button class="icon-button" id="reset-view" aria-label="重置视角" title="重置视角"><svg><use href="#i-reset"/></svg></button>
           </div>
         </div>
       </section>
@@ -238,7 +260,7 @@
   <dialog id="help-dialog" class="dialog" aria-labelledby="help-title">
     <button class="dialog-close icon-button" data-close="help-dialog" aria-label="关闭使用指南"><svg><use href="#i-close"/></svg></button>
     <h2 id="help-title">使用指南</h2>
-    <div class="help-item"><span>01</span><div><h3>逛办公室</h3><p>拖动旋转，滚轮或双指缩放。左上角切换全景、工位、休息区和俯瞰视角。</p></div></div>
+    <div class="help-item"><span>01</span><div><h3>逛办公室</h3><p>拖动旋转，滚轮或双指缩放，也可以直接使用底部的旋转、俯仰按钮和缩放滑杆。开启「平移」后拖动画面；「复位」回到全景。点展开可铺满屏幕。画布获得焦点后，方向键调角度，+/− 缩放，0 复位。</p></div></div>
     <div class="help-item"><span>02</span><div><h3>找一位伙伴</h3><p>点场景里的机器人，或右侧名单里的名字，打开它的对话。同一栏里可以看当前任务、派任务、让它休息、换工位。</p></div></div>
     <div class="help-item"><span>03</span><div><h3>一起讨论</h3><p>名单顶部的「公共频道」是所有成员共享的讨论区，可以 @ 伙伴、引用回复、关联任务。</p></div></div>
     <div class="help-item"><span>04</span><div><h3>看任务走到哪</h3><p>「任务」页按派发、领取、执行、完成四步展示每个任务的位置，点阶段可以筛选。</p></div></div>
