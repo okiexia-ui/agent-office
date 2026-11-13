@@ -10,7 +10,7 @@
   --raised: #ffffff;
   --ink: #1d201c;
   --ink-2: #4b5047;
-  --ink-3: #777b71;
+  --ink-3: #63675d;
   --ink-4: #a5a89e;
   --line: #dbd8cb;
   --line-2: #e8e5da;
@@ -54,7 +54,7 @@ body.night {
   --raised: #282e28;
   --ink: #eceae2;
   --ink-2: #bcbfb3;
-  --ink-3: #8d9186;
+  --ink-3: #91958a;
   --ink-4: #656a61;
   --line: #313730;
   --line-2: #282d27;
@@ -67,7 +67,7 @@ body.night {
   --ok-soft: #1f3526;
   --warn: #e3b45b;
   --warn-soft: #3a3018;
-  --idle: #8d9186;
+  --idle: #91958a;
   --danger: #f18c82;
   --danger-soft: #3c1f1c;
   --dot: rgba(236, 234, 226, .08);
@@ -114,6 +114,7 @@ svg {
 ::selection { background: var(--accent-soft); color: var(--accent-ink); }
 
 .icon-library { position: absolute; width: 0; height: 0; overflow: hidden; }
+.stage, .context-home, .chat-log, .channel-log, .dialog, .task-result { scrollbar-width: thin; scrollbar-color: var(--line) transparent; }
 .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
 .num, .count { font-family: var(--mono); font-variant-numeric: tabular-nums; white-space: nowrap; }
 .subtle { color: var(--ink-3); font-size: 12px; }
@@ -509,7 +510,7 @@ body.night .avatar { background: color-mix(in srgb, var(--avatar-color) 24%, var
 .search-input { display: flex; align-items: center; gap: 8px; height: 38px; padding: 0 12px; border: 1px solid var(--line); border-radius: var(--r-2); background: var(--raised); color: var(--ink-3); transition: border-color .18s var(--ease); }
 .search-input:focus-within { border-color: var(--ink-3); color: var(--ink); }
 .search-input input { flex: 1; min-width: 0; border: 0; outline: 0; background: none; font-size: 14px; }
-.search-input input::placeholder { color: var(--ink-4); }
+.search-input input::placeholder { color: var(--ink-3); }
 .members-page .chips { margin-bottom: 16px; }
 .member-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(248px, 1fr)); gap: 14px; }
 .member-card { display: flex; flex-direction: column; gap: 12px; padding: 16px; border: 1px solid var(--line); border-radius: var(--r-3); background: var(--surface); text-align: left; transition: border-color .18s var(--ease), transform .18s var(--ease); }
@@ -558,7 +559,7 @@ body.night .avatar { background: color-mix(in srgb, var(--avatar-color) 24%, var
   font-size: 14px;
   transition: border-color .18s var(--ease), box-shadow .18s var(--ease);
 }
-.form-input::placeholder { color: var(--ink-4); }
+.form-input::placeholder { color: var(--ink-3); }
 .form-input:focus { outline: 0; border-color: var(--ink-3); box-shadow: 0 0 0 3px var(--line-2); }
 textarea.form-input { resize: vertical; line-height: 1.5; }
 .form-note { margin-top: 14px; font-size: 12.5px; color: var(--ink-3); text-wrap: pretty; }

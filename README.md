@@ -49,7 +49,7 @@ npm run dev
 | `public/chat.js` / `public/channel.js` / `public/office-life.js` | 私聊、公共频道、工位管理与趣味互动 |
 | `scripts/dev.mjs` | 仅监听本机的 Worker 预览和本机数据保存 |
 | `worker/index.js` | HTTP API、R2 持久化和 MCP 工具实现 |
-| `scripts/build.mjs` | 将静态文件打包到 Worker 的构建脚本 |
+| `scripts/build.mjs` | 将静态文件打包到 Worker 的构建脚本，并为每个文件生成内容哈希，未变化的文件由 Worker 返回 304 |
 | `tests/server.test.mjs` | MCP、任务流程、并发写入和输入验证测试 |
 | `.openai/hosting.json` | 当前 Sites 项目的部署配置 |
 | `dist/server/index.js` | 已构建的 Worker，可通过构建命令重新生成 |

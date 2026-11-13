@@ -142,7 +142,8 @@ function chain(t, labels = true) {
 // ---- Rendering ------------------------------------------------------------
 
 function render() {
-  renderChrome(); renderTeam(); renderActivities(); renderMembers(); renderTasks();
+  renderChrome(); renderTeam(); renderActivities();
+  if (view === 'tasks') renderTasks(); else if (view === 'members') renderMembers();
   officeLife?.refresh(); chat?.refresh(); channel?.refresh();
 }
 function renderChrome() {
@@ -164,12 +165,14 @@ function renderChrome() {
   setHTML($('#theme-btn'), icon(state.night ? 'moon' : 'sun'));
   $('#theme-btn').setAttribute('aria-label', state.night ? '切换到白天模式' : '切换到夜晚模式');
   $('meta[name="theme-color"]').content = state.night ? '#141714' : '#f0eee7';
+  $('#nav-task-count').textContent = state.tasks.filter(t => t.status !== 'done').length || '';
+  $('#nav-member-count').textContent = state.agents.length || '';
 }
 function rosterRow(a, index) {
   const t = taskFor(a.id), inbox = state.chatPending?.[a.id] || 0;
   const detail = t ? `<em>${STAGES[t.status]}</em> · ${esc(t.title)}` : esc(a.role);
   const bar = t && t.status !== 'queued' ? `<span class="mini-progress ${t.status === 'paused' ? 'paused' : ''}" style="--p:${Math.round(t.progress)}"><i></i></span>` : '';
-  return `<li class="roster-row ${a.id === selectedAgent ? 'selected' : ''}" style="--i:${index}"><button class="roster-main" data-chat="${esc(a.id)}" aria-label="打开 ${esc(a.name)} 的对话，${presence(a)}"><span>${avatar(a)}</span><span class="roster-text"><span class="roster-name"><span>${esc(a.name)}</span>${inbox ? `<span class="badge" title="${inbox} 条留言等待回复">${inbox}</span>` : ''}</span><span class="roster-sub">${detail}</span>${bar}</span>${statusTag(a)}</button></li>`;
+  return `<li class="roster-row ${a.id === selectedAgent ? 'selected' : ''}" style="--i:${index}"><button class="roster-main" data-chat="${esc(a.id)}"${a.id === selectedAgent ? ' aria-current="true"' : ''} aria-label="打开 ${esc(a.name)} 的对话，${presence(a)}"><span>${avatar(a)}</span><span class="roster-text"><span class="roster-name"><span>${esc(a.name)}</span>${inbox ? `<span class="badge" title="${inbox} 条留言等待回复">${inbox}</span>` : ''}</span><span class="roster-sub">${detail}</span>${bar}</span>${statusTag(a)}</button></li>`;
 }
 function renderTeam() {
   $('#team-badge').textContent = state.agents.length;
@@ -198,7 +201,6 @@ function memberCard(a, index) {
 }
 function renderMembers() {
   const query = $('#member-search').value.trim().toLowerCase();
-  $('#nav-member-count').textContent = state.agents.length || '';
   $('#member-summary').textContent = `${state.agents.length} 位成员，${DESKS.length - state.agents.length} 个空工位。点一位成员打开对话。`;
   setHTML($('#member-filters'), chips(memberFilter, 'member-filter'));
   const agents = state.agents.filter(a => matches(a, memberFilter) && `${a.name} ${a.role} ${a.model}`.toLowerCase().includes(query));
@@ -213,7 +215,6 @@ function taskCard(t, index) {
 }
 function renderTasks() {
   const count = status => state.tasks.filter(t => t.status === status).length;
-  $('#nav-task-count').textContent = state.tasks.filter(t => t.status !== 'done').length || '';
   const stage = (key, label, extra = '') => `<button class="pipe-stage ${extra}" data-task-filter="${key}" aria-pressed="${taskFilter === key}"><b>${key === 'all' ? state.tasks.length : count(key)}</b><span>${label}</span></button>`;
   setHTML($('#task-pipeline'), stage('all', '全部', 'all') + stage('queued', '待领取') + '<i class="pipe-arrow"></i>' + stage('active', '执行中') + '<i class="pipe-arrow"></i>' + stage('done', '已完成') + stage('paused', '已暂停', 'aside'));
   const order = {active:0, queued:1, paused:2, done:3};
@@ -245,18 +246,35 @@ function changeView(next) {
     if (on) button.setAttribute('aria-current', 'page'); else button.removeAttribute('aria-current');
   });
   $('#stage').scrollTop = 0;
+  if (next === 'tasks') renderTasks(); else if (next === 'members') renderMembers();
   if (next === 'office') requestAnimationFrame(() => scene?.resize());
   else { expand(false); playEnter(next === 'tasks' ? $('#task-board') : $('#member-grid')); }
 }
 function openDialog(id) { const dialog = $('#' + id); if (!dialog.open) dialog.showModal(); }
 function closeDialog(id) { $('#' + id).close(); }
+// Remember what opened a pane so closing it puts keyboard focus back there.
+let paneOpener = null;
+function rememberOpener() {
+  const active = document.activeElement;
+  if ($('.pane[open]') || !active || active === document.body || active.closest('.pane')) return;
+  const key = FOCUS_KEYS.find(attribute => active.hasAttribute(attribute));
+  paneOpener = {element:active, selector:key ? `[${key}="${CSS.escape(active.getAttribute(key))}"]` : active.id ? '#' + CSS.escape(active.id) : null};
+}
+function restoreOpener(fallback) {
+  if ($('.pane[open]')) return;
+  const target = paneOpener?.element.isConnected ? paneOpener.element : $(paneOpener?.selector || fallback);
+  paneOpener = null;
+  target?.focus({preventScroll:true});
+}
 function openChat(id) {
   if (!state.agents.some(a => a.id === id)) return;
+  rememberOpener();
   expand(false);
   if ($('#channel-dialog').open) $('#channel-dialog').close();
   chat.open(id);
 }
 function openChannel() {
+  rememberOpener();
   expand(false);
   if ($('#chat-dialog').open) $('#chat-dialog').close();
   channel.open();
@@ -437,6 +455,8 @@ officeLife = new OfficeLife({getState:() => state, getScene:() => scene, save:up
 channel = new ChannelChat({demo:DEMO, getState:() => state, avatar, presence,
   onPrivate:() => { const id = state.agents.some(a => a.id === lastAgent) ? lastAgent : state.agents[0]?.id; if (id) openChat(id); else toast('先招募一位伙伴，再开始私聊'); },
   onConnect:() => openDialog('connect-dialog'), onChange:syncCloud, toast});
+$('#chat-dialog').addEventListener('close', () => restoreOpener(lastAgent ? `[data-chat="${CSS.escape(lastAgent)}"]` : '#channel-entry'));
+$('#channel-dialog').addEventListener('close', () => restoreOpener('#channel-entry'));
 $('#chat-nav').onclick = openChannel;
 $('#channel-entry').onclick = openChannel;
 render();
