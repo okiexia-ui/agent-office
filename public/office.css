@@ -1,10 +1,13 @@
 /* The 3D stage, its floating controls, in-scene labels and the desk map.
    The canvas is transparent: the dotted paper of .stage shows through, so the office sits on the page. */
 
-.space { position: absolute; inset: 0; min-height: 440px; overflow: hidden; }
+.space { position: absolute; inset: 0; display: grid; grid-template-rows: minmax(0, 1fr) auto auto; min-height: 0; overflow: hidden; }
+.scene-viewport { position: relative; min-height: 0; overflow: hidden; }
 #canvas-container { position: absolute; inset: 0; touch-action: none; cursor: grab; }
 #canvas-container:active { cursor: grabbing; }
+#canvas-container[data-drag-mode="pan"] { cursor: move; }
 #canvas-container canvas { display: block; width: 100%; height: 100%; }
+#canvas-container canvas:focus-visible { outline-offset: -3px; }
 
 .float {
   display: inline-flex;
@@ -23,7 +26,7 @@
 .float .icon-button svg { width: 16px; height: 16px; }
 .float-divider { width: 1px; height: 16px; margin: 0 3px; background: var(--line); }
 
-.scene-top, .scene-bottom {
+.scene-top {
   position: absolute;
   left: 14px;
   right: 14px;
@@ -35,7 +38,6 @@
   pointer-events: none;
 }
 .scene-top { top: 14px; }
-.scene-bottom { bottom: 14px; }
 
 .segmented button, .rituals button, .tool-button {
   display: inline-flex;
@@ -58,13 +60,37 @@
 .rituals button.just-played { background: var(--accent-soft); color: var(--accent-ink); }
 #focus-btn[aria-pressed="true"] { background: var(--ink); color: var(--paper); font-family: var(--mono); font-variant-numeric: tabular-nums; }
 
-.scene-hint { font-size: 12px; color: var(--ink-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-#zoom-value { min-width: 42px; text-align: center; font-family: var(--mono); font-size: 12px; color: var(--ink-2); }
+.scene-hint { font-size: 11.5px; color: var(--ink-3); white-space: nowrap; }
+#zoom-value { min-width: 42px; text-align: center; font-family: var(--mono); font-size: 12px; color: var(--ink-2); font-variant-numeric: tabular-nums; }
+
+/* Camera controls never disappear at a narrow breakpoint. They sit outside
+   the canvas so the room, names and gestures do not compete for that space. */
+.camera-dock { position: relative; z-index: var(--z-overlay); padding: 10px 16px 12px; border-top: 1px solid var(--line); background: var(--surface); }
+.camera-caption { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 7px; color: var(--ink-3); font-size: 11.5px; }
+.camera-caption strong { font-weight: 600; color: var(--ink); margin-left: 6px; }
+.camera-caption p { text-align: right; }
+.camera-tools { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.camera-orbit, .camera-options, .zoom-controls { display: flex; align-items: center; gap: 2px; }
+.camera-orbit { padding: 2px; border-radius: 10px; background: var(--surface-2); }
+.camera-dock .icon-button { width: 36px; height: 36px; flex: none; }
+.camera-dock .tool-button { height: 36px; padding: 0 9px; }
+.camera-options { margin-right: auto; }
+.camera-options button[aria-pressed="true"] { background: var(--paper-2); color: var(--ink); }
+.camera-options #pan-toggle[aria-pressed="true"] { background: var(--accent-soft); color: var(--accent-ink); }
+.zoom-controls { flex: 1; min-width: 270px; max-width: 420px; }
+#zoom-slider { width: 90px; min-width: 40px; flex: 1; height: 32px; margin: 0 4px; accent-color: var(--accent); cursor: ew-resize; }
+#reset-view { margin-left: 5px; border: 1px solid var(--line); background: var(--raised); }
+.office-utilities { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 6px 16px; border-top: 1px solid var(--line-2); background: var(--surface); }
+.office-utilities .rituals { display: flex; align-items: center; gap: 1px; }
+.office-utilities .rituals button { height: 28px; padding: 0 7px; font-size: 11.5px; }
+body.expanded-mode .space { position: fixed; inset: 0; z-index: 60; height: 100dvh; min-height: 0; background: var(--paper); background-image: radial-gradient(circle, var(--dot) 1px, transparent 1.4px); background-size: 22px 22px; }
+body.expanded-mode { overflow: hidden; }
+body.expanded-mode .office-utilities { padding-bottom: max(6px, env(safe-area-inset-bottom)); }
 
 .office-moment {
   position: absolute;
   left: 14px;
-  bottom: 60px;
+  bottom: 16px;
   z-index: var(--z-overlay);
   max-width: min(360px, calc(100% - 28px));
   padding: 8px 12px;
@@ -126,6 +152,7 @@
 .label-color { width: 8px; height: 8px; border-radius: 3px; flex: none; }
 .label-sleep { font-size: 11px; font-weight: 500; color: var(--ink-3); }
 .agent-label.selected .label-sleep { color: inherit; opacity: .7; }
+.label-name { max-width: 126px; overflow: hidden; text-overflow: ellipsis; }
 .label-busy { display: inline-flex; align-items: flex-end; gap: 2px; height: 10px; }
 .label-busy i { width: 2px; height: 100%; border-radius: 1px; background: var(--ok); transform-origin: bottom; animation: bars 1s ease-in-out infinite; }
 .label-busy i:nth-child(2) { animation-delay: .18s; }
@@ -181,21 +208,38 @@
 .desk-selection strong { font-size: 15px; font-weight: 650; }
 .desk-selection p { margin-top: 2px; font-size: 13px; color: var(--ink-2); }
 
-@media (max-width: 1240px) {
-  .scene-hint { display: none; }
-}
-
 @media (max-width: 860px) {
-  .space { position: relative; inset: auto; height: min(66dvh, 540px); min-height: 380px; }
-  .scene-top, .scene-bottom { left: 10px; right: 10px; }
+  .space { position: relative; inset: auto; height: clamp(480px, 76dvh, 680px); min-height: 480px; }
+  .scene-top { left: 10px; right: 10px; }
   .scene-top { top: 10px; }
-  .scene-bottom { bottom: 10px; }
-  .rituals button span, .tool-button span { display: none; }
+  .rituals button span, .scene-tools .tool-button span { display: none; }
   .rituals #focus-btn span { display: inline; }
   .segmented button { padding: 0 8px; }
-  .office-moment { left: 10px; bottom: 54px; }
-  .zoom-controls > :not(#reset-view) { display: none; }
+  .scene-top button { min-height: 32px; }
+  .camera-dock { padding: 9px 10px 10px; }
+  .camera-tools { gap: 5px; }
+  .camera-orbit { flex: none; }
+  .camera-options { margin-left: auto; margin-right: 0; }
+  .camera-options .tool-button { padding: 0 7px; gap: 5px; }
+  .zoom-controls { flex-basis: 100%; max-width: none; }
+  .camera-caption { font-size: 11px; }
+  .office-utilities { padding: 5px 10px; gap: 3px; }
+  .office-utilities .scene-hint { font-size: 10.5px; }
+  .office-utilities .rituals button { padding: 0 6px; }
+  .office-moment { left: 10px; bottom: 14px; }
   .agent-label { height: 22px; padding: 0 7px 0 6px; gap: 5px; border-radius: 11px; font-size: 11px; }
+  .label-name { max-width: 104px; }
   .hotspot-label { width: 22px; padding: 0; }
   .desk-tile { padding: 6px 7px; }
+}
+
+@media (max-width: 360px) {
+  .scene-top { left: 8px; right: 8px; gap: 6px; }
+  .segmented button { padding: 0 4px; font-size: 12px; }
+  .scene-tools .tool-button { padding: 0 5px; gap: 3px; }
+  .scene-tools .tool-button b { font-size: 10.5px; }
+  .camera-options .tool-button { padding: 0 5px; gap: 3px; }
+  .camera-caption p { font-size: 10px; }
+  .office-utilities .scene-hint { display: none; }
+  .office-utilities { justify-content: center; }
 }
