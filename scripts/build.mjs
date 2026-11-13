@@ -1,11 +1,15 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import {createHash} from 'node:crypto';
 const root=path.resolve(import.meta.dirname,'..');
 const publicDir=path.join(root,'public');
 const types={'.html':'text/html; charset=utf-8','.css':'text/css; charset=utf-8','.js':'text/javascript; charset=utf-8','.svg':'image/svg+xml','.txt':'text/plain; charset=utf-8','.yaml':'text/plain; charset=utf-8','.json':'application/json; charset=utf-8'};
 const assets={};
 async function visit(dir){for(const entry of await fs.readdir(dir,{withFileTypes:true})){const file=path.join(dir,entry.name);if(entry.isDirectory())await visit(file);else assets['/'+path.relative(publicDir,file).split(path.sep).join('/') ]={body:await fs.readFile(file,'utf8'),type:types[path.extname(file)]||'text/plain; charset=utf-8'};}}
+// A content hash per asset lets the Worker answer 304 when the browser already has the file.
+const tag=body=>'"'+createHash('sha256').update(body).digest('hex').slice(0,20)+'"';
 await visit(publicDir);
+for(const asset of Object.values(assets))asset.etag=tag(asset.body);
 const shared=await fs.readFile(path.join(publicDir,'layout.js'),'utf8');
 const core=(await fs.readFile(path.join(root,'worker/index.js'),'utf8')).replace("import {DESKS, assignSeats} from '../public/layout.js';",shared);
 const out=path.join(root,'dist/server');await fs.mkdir(out,{recursive:true});

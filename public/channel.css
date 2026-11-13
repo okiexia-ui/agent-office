@@ -72,7 +72,7 @@
 .chat-message { display: grid; gap: 3px; max-width: 88%; justify-items: start; }
 .chat-message.user { align-self: flex-end; justify-items: end; }
 .message-author { font-size: 12px; color: var(--ink-3); }
-.message-author time, .channel-author time { margin-left: 6px; font-family: var(--mono); font-size: 11px; color: var(--ink-4); }
+.message-author time, .channel-author time { margin-left: 6px; font-family: var(--mono); font-size: 11px; color: var(--ink-3); }
 .message-bubble { padding: 9px 12px; border-radius: 14px 14px 14px 4px; background: var(--surface-2); font-size: 14px; line-height: 1.55; white-space: pre-wrap; overflow-wrap: anywhere; }
 .chat-message.user .message-bubble { border-radius: 14px 14px 4px 14px; background: var(--ink); color: var(--paper); }
 .message-state { font-size: 11.5px; color: var(--ink-3); }
@@ -95,11 +95,11 @@
 
 .composer { padding: 10px 12px 12px; border-top: 1px solid var(--line-2); }
 .composer textarea { display: block; width: 100%; padding: 10px 12px; border: 1px solid var(--line); border-radius: 12px; background: var(--raised); font-size: 14px; line-height: 1.5; resize: none; transition: border-color .18s var(--ease), box-shadow .18s var(--ease); }
-.composer textarea::placeholder { color: var(--ink-4); }
+.composer textarea::placeholder { color: var(--ink-3); }
 .composer textarea:focus { outline: 0; border-color: var(--ink-3); box-shadow: 0 0 0 3px var(--line-2); }
 .composer-footer { display: flex; align-items: center; gap: 10px; margin-top: 8px; }
-.composer-hint { font-size: 12px; color: var(--ink-4); }
-.composer-footer .num { margin-left: auto; font-size: 11.5px; color: var(--ink-4); }
+.composer-hint { font-size: 12px; color: var(--ink-3); }
+.composer-footer .num { margin-left: auto; font-size: 11.5px; color: var(--ink-3); }
 
 /* Shared channel */
 
