@@ -2,15 +2,18 @@
 <html lang="zh-CN">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta name="theme-color" content="#f6f7f2">
-  <meta name="description" content="在一个温暖的 3D 办公室里，与你的 AI 团队一起工作。查看 Agent 状态、分配任务，让协作一目了然。">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="theme-color" content="#f0eee7">
+  <meta name="description" content="一间可以走进去看的 AI 办公室：谁在线、谁在做什么、任务走到哪一步，一眼看清。">
   <title>Agent Office · 你的 AI 办公室</title>
   <link rel="icon" href="./favicon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="./style.css">
+  <link rel="stylesheet" href="./office.css">
+  <link rel="stylesheet" href="./channel.css">
   <script type="importmap">{"imports":{"three":"./vendor/three.module.js"}}</script>
 </head>
-<body>
+<body data-view="office">
+  <script>try{var d=new URLSearchParams(location.search).get('demo')==='1',s=d?JSON.parse(localStorage.getItem('agent-office-state-v1')||'null'):null,v=d?(s?s.night:null):localStorage.getItem('agent-office-night');if(v===true||v==='1'||(v==null&&matchMedia('(prefers-color-scheme: dark)').matches))document.body.classList.add('night')}catch(e){}</script>
   <svg class="icon-library" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
     <symbol id="i-office" viewBox="0 0 24 24"><path d="m3 8 9-5 9 5v9l-9 5-9-5Z M3 8l9 5 9-5 M12 13v9 M7.5 5.5l9 5v5"/></symbol>
     <symbol id="i-grid" viewBox="0 0 24 24"><rect x="4" y="4" width="6" height="6" rx="1.5"/><rect x="14" y="4" width="6" height="6" rx="1.5"/><rect x="4" y="14" width="6" height="6" rx="1.5"/><rect x="14" y="14" width="6" height="6" rx="1.5"/></symbol>
@@ -34,50 +37,241 @@
     <symbol id="i-pause" viewBox="0 0 24 24"><path d="M8 5v14 M16 5v14"/></symbol>
     <symbol id="i-play" viewBox="0 0 24 24"><path d="m8 4 12 8-12 8Z"/></symbol>
     <symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></symbol>
+    <symbol id="i-chat" viewBox="0 0 24 24"><path d="M21 11a8 8 0 0 1-8 8H7l-5 3V7a5 5 0 0 1 5-5h6a8 8 0 0 1 8 9Z M7 8h10 M7 12h7"/></symbol>
+    <symbol id="i-cat" viewBox="0 0 24 24"><path d="M4 12V3l5 4h6l5-4v9a8 8 0 0 1-16 0Z M8 12h.01 M16 12h.01 M10 16l2 1 2-1"/></symbol>
+    <symbol id="i-send" viewBox="0 0 24 24"><path d="m22 2-7 20-4-9L2 9 22 2Z M11 13 22 2"/></symbol>
+    <symbol id="i-hash" viewBox="0 0 24 24"><path d="M9.5 3 7.5 21 M16.5 3l-2 18 M4 9h17 M3 15h17"/></symbol>
+    <symbol id="i-link" viewBox="0 0 24 24"><path d="M10 14a4 4 0 0 0 5.7 0l3-3A4 4 0 0 0 13 5.3l-1 1 M14 10a4 4 0 0 0-5.7 0l-3 3A4 4 0 0 0 11 18.7l1-1"/></symbol>
   </svg>
+  <a class="skip-link" href="#stage">跳到主要内容</a>
+
   <header class="topbar">
-    <a class="brand" href="#office" aria-label="Agent Office 首页"><span class="brand-symbol"><svg><use href="#i-office"/></svg></span><span>agent<span class="brand-light">office</span><span class="brand-dot">.</span></span></a>
-    <div class="breadcrumb"><span>/</span> 我的工作空间 <span class="tiny-badge">个人版</span></div>
-    <div class="topbar-right"><span class="demo-badge"><span class="pulse-dot"></span>演示空间</span><button class="text-button" id="connect-btn">连接 Hermes</button><a class="text-button" id="mode-link" href="?demo=1">体验演示</a><span class="top-divider"></span><button class="profile" id="profile-btn" aria-label="工作空间说明">Y</button></div>
-  </header>
-  <div class="app-shell">
-    <nav class="rail" aria-label="主导航">
-      <div class="rail-top"><button class="nav-item active" data-view="office" title="办公室" aria-label="办公室" aria-current="page"><svg><use href="#i-office"/></svg><span>空间</span></button><button class="nav-item" data-view="tasks" title="任务看板" aria-label="任务看板"><svg><use href="#i-task"/></svg><span>任务</span></button><button class="nav-item" data-view="members" title="团队成员" aria-label="团队成员"><svg><use href="#i-users"/></svg><span>团队</span></button></div>
-      <div class="rail-bottom"><button class="nav-item" id="theme-btn" title="切换日夜" aria-label="切换到夜晚模式"><svg><use href="#i-sun"/></svg></button><button class="nav-item" id="help-btn" title="使用指南" aria-label="使用指南"><svg><use href="#i-help"/></svg></button><span class="rail-avatar">Y</span></div>
+    <a class="brand" href="./" aria-label="Agent Office 首页"><span class="brand-mark"><svg><use href="#i-office"/></svg></span><span class="brand-name">agent<b>office</b></span></a>
+    <nav class="views" aria-label="主导航">
+      <button class="view-link active" data-view="office" aria-current="page"><svg><use href="#i-office"/></svg><span>空间</span></button>
+      <button class="view-link" data-view="tasks"><svg><use href="#i-task"/></svg><span>任务</span><b class="count" id="nav-task-count"></b></button>
+      <button class="view-link" data-view="members"><svg><use href="#i-users"/></svg><span>成员</span><b class="count" id="nav-member-count"></b></button>
+      <button class="view-link only-sm" id="chat-nav"><svg><use href="#i-hash"/></svg><span>频道</span></button>
     </nav>
-    <main class="workspace">
-      <div class="page-heading"><div><div class="eyebrow">A LITTLE SPACE, BIG IDEAS</div><h1 id="page-title">我的 AI 办公室<span class="heading-dot">.</span></h1><p id="page-subtitle">让每一位 Agent 各展所长，让好想法在这里发生。</p></div><button class="button primary" id="recruit-btn"><svg><use href="#i-plus"/></svg>招募新成员</button></div>
-      <section class="overview" aria-label="团队概况"><div class="overview-title"><span class="overview-icon"><svg><use href="#i-users"/></svg></span><span>团队在线 <strong id="total-count">8</strong><span class="unit">位</span></span></div><div class="overview-divider"></div><button class="stat-filter" data-filter="working"><i class="status-dot working"></i>工作中 <strong id="working-count">4</strong></button><button class="stat-filter" data-filter="thinking"><i class="status-dot thinking"></i>思考中 <strong id="thinking-count">1</strong></button><button class="stat-filter" data-filter="resting"><i class="status-dot resting"></i>休息中 <strong id="resting-count">3</strong></button><div class="overview-tail"><svg><use href="#i-spark"/></svg> 小小团队，无限可能</div></section>
-      <div class="content-grid">
-        <div class="main-column">
-          <section class="space-panel" id="space-panel" aria-label="3D 办公空间">
-            <div class="space-toolbar"><div class="view-tabs" role="tablist" aria-label="办公室视图"><button class="view-tab active" id="space-tab" role="tab" aria-selected="true"><svg><use href="#i-office"/></svg>空间视图</button><button class="view-tab" id="list-tab" role="tab" aria-selected="false"><svg><use href="#i-grid"/></svg>成员列表</button></div><div class="space-tools"><span class="live-label"><i></i>LIVE</span><button class="icon-button" id="expand-btn" title="展开办公室" aria-label="展开办公室"><svg><use href="#i-expand"/></svg></button></div></div>
-            <div class="scene-wrap" id="scene-wrap"><div id="canvas-container" role="img" aria-label="可旋转的 3D AI 办公室，可通过右侧成员列表选择 Agent"></div><div id="agent-labels" class="agent-labels"></div>
-              <div class="scene-top"><div class="room-tag"><span class="room-icon">01</span><div><strong>The little office</strong><span>灵感正在发生</span></div></div><div class="camera-picker"><svg><use href="#i-office"/></svg><select id="camera-select" aria-label="切换视角"><option value="overview">全景视角</option><option value="work">专注工位</option><option value="lounge">休息角落</option><option value="top">俯瞰视角</option></select><svg class="select-arrow"><use href="#i-down"/></svg></div></div>
-              <div class="scene-loading" id="scene-loading"><span class="loader-orbit"></span><p>正在打开你的办公室…</p></div>
-              <div class="scene-bottom"><div class="scene-hint"><span class="mouse-icon"></span><span>拖动旋转 · 滚轮缩放 · 点击成员</span></div><div class="zoom-controls"><button class="icon-button" id="zoom-out" aria-label="缩小" title="缩小"><svg><use href="#i-minus"/></svg></button><span id="zoom-value">100%</span><button class="icon-button" id="zoom-in" aria-label="放大" title="放大"><svg><use href="#i-plus"/></svg></button><span class="control-divider"></span><button class="icon-button" id="reset-view" aria-label="重置视角" title="重置视角"><svg><use href="#i-reset"/></svg></button></div></div>
-            </div>
-            <div id="member-list-view" class="member-list-view" hidden></div>
-            <div class="space-footer"><div class="floor-legend"><span><i class="legend-square work-zone"></i>专注工作区</span><span><i class="legend-square lounge-zone"></i>灵感休息区</span></div><button class="simulation-toggle" id="simulation-toggle"><svg><use href="#i-pause"/></svg><span>暂停模拟</span></button></div>
-          </section>
-          <section class="tasks-page" id="tasks-page" hidden><div class="section-heading"><h2>任务看板 <span id="task-count"></span></h2><button class="button secondary compact new-task-trigger"><svg><use href="#i-plus"/></svg>新建任务</button></div><div class="task-filters"><button class="task-filter active" data-task-filter="all">全部任务</button><button class="task-filter" data-task-filter="active">进行中</button><button class="task-filter" data-task-filter="done">已完成</button></div><div id="task-board" class="task-board"></div></section>
-          <section class="members-page" id="members-page" hidden><div class="section-heading"><h2>团队成员 <span id="member-count"></span></h2><label class="search-input"><svg><use href="#i-search"/></svg><input id="member-search" placeholder="搜索名字或专长" aria-label="搜索团队成员"></label></div><div class="member-filters" id="member-filters"><button class="member-filter active" data-member-filter="all">全部</button><button class="member-filter" data-member-filter="working">工作中</button><button class="member-filter" data-member-filter="thinking">思考中</button><button class="member-filter" data-member-filter="resting">休息中</button></div><div id="member-grid" class="member-grid"></div></section>
-          <div class="daily-note"><div class="note-mark"><svg><use href="#i-sun"/></svg></div><div><strong id="note-title">各自闪光，一起发亮。</strong><span id="note-text">你的 AI 伙伴已就位，把下一件好事交给他们吧。</span></div><button class="text-button new-task-trigger">分配一个任务<svg><use href="#i-arrow"/></svg></button></div>
+    <div class="topbar-right">
+      <div class="sync-pill" id="sync-pill"><i class="pulse-dot"></i><span id="sync-text" role="status">正在连接</span><a id="mode-link" href="?demo=1">体验演示</a></div>
+      <button class="icon-button" id="simulation-toggle" aria-label="暂停模拟" title="暂停模拟"><svg><use href="#i-pause"/></svg></button>
+      <button class="icon-button" id="theme-btn" aria-label="切换到夜晚模式" title="切换日夜"><svg><use href="#i-sun"/></svg></button>
+      <button class="icon-button" id="help-btn" aria-label="使用指南" title="使用指南"><svg><use href="#i-help"/></svg></button>
+      <button class="button secondary compact" id="connect-btn" aria-label="连接 Hermes" title="连接 Hermes"><svg><use href="#i-link"/></svg><span>连接 Hermes</span></button>
+      <button class="button primary compact new-task-trigger" aria-label="派任务" title="派任务"><svg><use href="#i-plus"/></svg><span>派任务</span></button>
+    </div>
+  </header>
+
+  <div class="app">
+    <main class="stage" id="stage" tabindex="-1">
+      <section class="space" id="space-panel" aria-label="3D 办公空间">
+        <h1 class="sr-only">AI 办公室</h1>
+        <div id="canvas-container" role="img" aria-label="可旋转的 3D 办公室。成员也可以在右侧名单里选择。"></div>
+        <div id="agent-labels" class="agent-labels"></div>
+        <div class="scene-top">
+          <div class="float segmented" role="group" aria-label="切换视角">
+            <button data-camera="overview" aria-pressed="true">全景</button>
+            <button data-camera="work" aria-pressed="false">工位</button>
+            <button data-camera="lounge" aria-pressed="false">休息区</button>
+            <button data-camera="top" aria-pressed="false">俯瞰</button>
+          </div>
+          <div class="float scene-tools">
+            <button class="tool-button" id="desks-btn" aria-label="工位管理"><svg><use href="#i-grid"/></svg><span>工位</span><b id="desk-count">8 / 16</b></button>
+            <button class="icon-button" id="expand-btn" title="展开办公室" aria-label="展开办公室"><svg><use href="#i-expand"/></svg></button>
+          </div>
         </div>
-        <aside class="right-panel">
-          <section class="team-panel"><div class="section-heading"><h2>我的团队 <span id="team-badge">8</span></h2><button class="text-button" id="manage-btn">管理<svg><use href="#i-arrow"/></svg></button></div><div class="team-filters"><button class="team-filter active" data-team-filter="all">全部</button><button class="team-filter" data-team-filter="working">工作中</button><button class="team-filter" data-team-filter="resting">休息中</button></div><div id="team-list" class="team-list"></div></section>
-          <section class="activity-panel"><div class="section-heading"><h2>办公室动态</h2><span class="subtle">刚刚发生</span></div><div id="activity-list" class="activity-list" aria-live="polite"></div></section>
-          <button class="invite-card new-task-trigger"><span class="invite-art"><svg><use href="#i-spark"/></svg></span><span><strong>好想法，开始执行。</strong><small>给你的团队分配一个新任务</small></span><svg class="invite-arrow"><use href="#i-arrow"/></svg></button>
-        </aside>
-      </div>
-      <footer class="workspace-footer"><span><i class="status-dot working"></i><span id="footer-status">办公室运转中</span><span class="footer-separator">·</span><span id="storage-label">成员与任务保存在云端</span></span><span>MADE FOR HUMAN + AI <span class="footer-flower">✳</span></span></footer>
+        <div class="scene-loading" id="scene-loading"><span class="loader-orbit"></span><p>正在打开办公室</p></div>
+        <p id="office-moment" class="office-moment" role="status"></p>
+        <div class="scene-bottom">
+          <div class="float rituals" id="office-life" role="group" aria-label="办公室小日常">
+            <button data-office-activity="coffee" title="来杯咖啡"><svg><use href="#i-coffee"/></svg><span>咖啡</span></button>
+            <button data-office-activity="cat" title="摸摸小猫"><svg><use href="#i-cat"/></svg><span>小猫</span></button>
+            <button data-office-activity="celebrate" title="庆祝一下"><svg><use href="#i-spark"/></svg><span>庆祝</span></button>
+            <i class="float-divider"></i>
+            <button id="focus-btn" aria-pressed="false"><svg><use href="#i-clock"/></svg><span id="focus-time">专注 25 分钟</span></button>
+          </div>
+          <p class="scene-hint">拖动旋转 · 滚轮缩放 · 点伙伴开始对话</p>
+          <div class="float zoom-controls">
+            <button class="icon-button" id="zoom-out" aria-label="缩小" title="缩小"><svg><use href="#i-minus"/></svg></button>
+            <span id="zoom-value">100%</span>
+            <button class="icon-button" id="zoom-in" aria-label="放大" title="放大"><svg><use href="#i-plus"/></svg></button>
+            <i class="float-divider"></i>
+            <button class="icon-button" id="reset-view" aria-label="重置视角" title="重置视角"><svg><use href="#i-reset"/></svg></button>
+          </div>
+        </div>
+      </section>
+
+      <section class="page tasks-page" id="tasks-page" aria-labelledby="tasks-title" hidden>
+        <header class="page-head">
+          <div><h1 id="tasks-title">任务</h1><p>派发、领取、执行、完成，每一步走到哪里都看得见。</p></div>
+          <button class="button primary new-task-trigger"><svg><use href="#i-plus"/></svg>派任务</button>
+        </header>
+        <div class="pipeline" id="task-pipeline" role="group" aria-label="按阶段筛选任务"></div>
+        <div id="task-board" class="task-board"></div>
+      </section>
+
+      <section class="page members-page" id="members-page" aria-labelledby="members-title" hidden>
+        <header class="page-head">
+          <div><h1 id="members-title">成员</h1><p id="member-summary"></p></div>
+          <label class="search-input"><svg><use href="#i-search"/></svg><input id="member-search" type="search" placeholder="搜索名字或专长" aria-label="搜索团队成员"></label>
+        </header>
+        <div class="chips" id="member-filters" role="group" aria-label="按状态筛选成员"></div>
+        <div id="member-grid" class="member-grid"></div>
+      </section>
     </main>
+
+    <aside class="context" id="context" aria-label="团队与对话">
+      <div class="context-home" id="context-home">
+        <section class="team" aria-labelledby="team-title">
+          <header class="pane-head">
+            <h2 id="team-title">团队 <b class="count" id="team-badge">0</b></h2>
+            <button class="button secondary compact" id="recruit-btn"><svg><use href="#i-plus"/></svg>招募</button>
+          </header>
+          <div class="chips" id="team-filters" role="group" aria-label="按状态筛选团队"></div>
+          <button class="channel-entry" id="channel-entry">
+            <span class="channel-symbol">#</span>
+            <span class="channel-entry-text"><strong>公共频道</strong><small id="channel-entry-note">你和所有伙伴一起讨论</small></span>
+            <svg><use href="#i-arrow"/></svg>
+          </button>
+          <div id="team-onboard" class="onboard" hidden></div>
+          <ul id="team-list" class="team-list"></ul>
+        </section>
+        <section class="feed" aria-labelledby="feed-title">
+          <header class="pane-head"><h2 id="feed-title">动态</h2><span class="subtle" id="feed-note"></span></header>
+          <ol id="activity-list" class="activity-list" aria-live="polite"></ol>
+        </section>
+      </div>
+
+      <dialog id="chat-dialog" class="pane chat-pane" aria-labelledby="chat-title">
+        <header class="pane-top">
+          <div id="chat-avatar"></div>
+          <div class="pane-identity">
+            <label id="chat-title" class="sr-only" for="chat-agent-select">对话对象</label>
+            <span class="select-wrap heading-select"><select id="chat-agent-select"></select><svg><use href="#i-down"/></svg></span>
+            <p id="chat-status"></p>
+          </div>
+          <button class="icon-button" id="chat-refresh" aria-label="刷新聊天记录" title="刷新"><svg><use href="#i-reset"/></svg></button>
+          <button class="icon-button" id="chat-close" aria-label="关闭对话" title="关闭"><svg><use href="#i-close"/></svg></button>
+        </header>
+        <div id="agent-card" class="agent-card"></div>
+        <div class="pane-note"><p id="chat-connection"></p><button class="text-button" id="chat-connect">连接说明</button></div>
+        <p id="chat-error" class="chat-error" role="alert" hidden></p>
+        <div id="chat-log" class="chat-log" role="log" aria-label="聊天记录" aria-live="polite" aria-relevant="additions text" tabindex="0"></div>
+        <div id="chat-pending" class="chat-pending" role="status" hidden></div>
+        <div id="chat-suggestions" class="chat-suggestions"><button type="button" data-prompt="目前的任务进展怎么样？">问问进展</button><button type="button" data-prompt="帮我一起想想下一步怎么做。">一起想下一步</button><button type="button" data-prompt="你在哪个工位？">你坐在哪</button></div>
+        <form id="chat-form" class="composer">
+          <label class="sr-only" for="chat-input">给 Agent 发消息</label>
+          <textarea id="chat-input" maxlength="2000" rows="2" placeholder="写点什么，Enter 发送"></textarea>
+          <div class="composer-footer"><span class="composer-hint">Shift + Enter 换行</span><span id="chat-count" class="num">0 / 2000</span><button id="chat-send" type="submit" class="button primary compact" disabled><span id="chat-send-label">发送</span><svg><use href="#i-send"/></svg></button></div>
+        </form>
+      </dialog>
+
+      <dialog id="channel-dialog" class="pane channel-pane" aria-labelledby="channel-title">
+        <header class="pane-top">
+          <span class="channel-symbol">#</span>
+          <div class="pane-identity"><h2 id="channel-title">公共频道</h2><p id="channel-members"></p></div>
+          <button class="icon-button" id="channel-refresh" aria-label="刷新公共频道" title="刷新"><svg><use href="#i-reset"/></svg></button>
+          <button class="icon-button" id="channel-close" aria-label="关闭公共频道" title="关闭"><svg><use href="#i-close"/></svg></button>
+        </header>
+        <div class="pane-bar">
+          <label for="channel-filter" class="sr-only">筛选任务讨论</label>
+          <span class="select-wrap"><select id="channel-filter"><option value="">全部讨论</option></select><svg><use href="#i-down"/></svg></span>
+          <button class="text-button" id="channel-private">成员私聊</button>
+          <button class="text-button" id="channel-connect">连接说明</button>
+        </div>
+        <div class="pane-note"><p id="channel-notice"></p></div>
+        <p id="channel-error" class="chat-error" role="alert" hidden></p>
+        <div id="channel-log" class="channel-log" role="log" aria-label="公共讨论记录" aria-live="polite" aria-relevant="additions text" tabindex="0"></div>
+        <form id="channel-form" class="composer channel-composer">
+          <div id="channel-reply" class="channel-reply" hidden><span id="channel-reply-text"></span><button class="icon-button" type="button" id="channel-reply-cancel" aria-label="取消引用回复"><svg><use href="#i-close"/></svg></button></div>
+          <div id="channel-participants" class="channel-participants" aria-label="选择要提醒的成员"></div>
+          <p id="channel-targets" class="channel-targets"></p>
+          <label class="sr-only" for="channel-input">发送到公共频道</label>
+          <textarea id="channel-input" maxlength="2000" rows="2" placeholder="聊聊工作，或者 @ 一位伙伴"></textarea>
+          <div class="composer-footer">
+            <label for="channel-task" class="sr-only">关联任务</label>
+            <span class="select-wrap small"><select id="channel-task"><option value="">不关联任务</option></select><svg><use href="#i-down"/></svg></span>
+            <span id="channel-count" class="num">0 / 2000</span>
+            <button type="submit" class="button primary compact" id="channel-send" disabled><span id="channel-send-label">发送</span><svg><use href="#i-send"/></svg></button>
+          </div>
+        </form>
+      </dialog>
+    </aside>
   </div>
-  <dialog id="detail-dialog" class="dialog detail-dialog"><form method="dialog"><button class="dialog-close icon-button" aria-label="关闭成员详情"><svg><use href="#i-close"/></svg></button></form><div id="detail-content"></div></dialog>
-  <dialog id="recruit-dialog" class="dialog"><button class="dialog-close icon-button" data-close="recruit-dialog" aria-label="关闭招募窗口"><svg><use href="#i-close"/></svg></button><div class="modal-eyebrow">GROW YOUR LITTLE TEAM</div><h2>欢迎新伙伴<span class="heading-dot">.</span></h2><p class="modal-description">选择一位 Agent，为办公室带来新的可能。</p><form id="recruit-form"><div class="model-options" id="model-options"></div><label class="field-label" for="agent-name">给新伙伴起个名字</label><input class="form-input" id="agent-name" maxlength="24" placeholder="例如：我的灵感搭子" required><label class="field-label" for="agent-role">负责什么工作</label><select class="form-input" id="agent-role"><option>通用助手</option><option>代码开发</option><option>内容创作</option><option>资料研究</option><option>设计创意</option><option>数据分析</option></select><div class="form-note"><svg><use href="#i-office"/></svg>新成员将加入演示办公室，可立即分配模拟任务。</div><button class="button primary full" type="submit"><svg><use href="#i-plus"/></svg>加入办公室</button></form></dialog>
-  <dialog id="task-dialog" class="dialog"><button class="dialog-close icon-button" data-close="task-dialog" aria-label="关闭新建任务窗口"><svg><use href="#i-close"/></svg></button><div class="modal-eyebrow">LET'S MAKE IT HAPPEN</div><h2>把想法交给伙伴<span class="heading-dot">.</span></h2><p class="modal-description">明确一个目标，然后一起把它完成。</p><form id="task-form"><label class="field-label" for="task-title">任务名称</label><input class="form-input" id="task-title" maxlength="80" placeholder="例如：设计新产品的欢迎页面" required><label class="field-label" for="task-description">任务描述 <span>选填</span></label><textarea class="form-input" id="task-description" maxlength="400" rows="3" placeholder="告诉伙伴，你想要什么样的结果…"></textarea><label class="field-label" for="task-agent">交给哪位伙伴</label><select class="form-input" id="task-agent" required></select><label class="field-label" for="task-priority">优先级</label><select class="form-input" id="task-priority"><option value="normal">常规 · 按计划推进</option><option value="high">优先 · 先完成这件事</option></select><div class="form-note">此处任务为本地模拟，不会调用真实模型或消耗 Token。</div><button class="button primary full" type="submit"><svg><use href="#i-bolt"/></svg>开始协作</button></form></dialog>
-  <dialog id="help-dialog" class="dialog"><button class="dialog-close icon-button" data-close="help-dialog" aria-label="关闭使用指南"><svg><use href="#i-close"/></svg></button><div class="modal-eyebrow">WELCOME TO YOUR OFFICE</div><h2>一点点使用指南<span class="heading-dot">.</span></h2><div class="help-item"><span>01</span><div><h3>逛一逛你的办公室</h3><p>拖动旋转，滚轮或双指缩放。用右上角的视角菜单探索工位和休息区。</p></div></div><div class="help-item"><span>02</span><div><h3>认识你的 AI 伙伴</h3><p>点击场景中的成员标签或团队名单，查看专长、当前任务，或让伙伴休息。</p></div></div><div class="help-item"><span>03</span><div><h3>开始一次小小的协作</h3><p>招募新成员、分配任务，并在任务看板查看模拟进度。状态会自动保存在当前浏览器。</p></div></div><div class="help-note">这是一个交互演示，未连接真实 Agent 服务。所有任务与动态均为本地模拟。</div><button class="button primary full" data-close="help-dialog">开始探索<svg><use href="#i-arrow"/></svg></button></dialog>
-  <dialog id="connect-dialog" class="dialog"><button class="dialog-close icon-button" data-close="connect-dialog" aria-label="关闭连接说明"><svg><use href="#i-close"/></svg></button><div class="modal-eyebrow">HERMES × AGENT OFFICE</div><h2>让 Hermes 加入办公室<span class="heading-dot">.</span></h2><p class="modal-description">把下面的配置合并到 Hermes 的 ~/.hermes/config.yaml。保留已有服务器配置。</p><pre id="connect-code" class="connection-code"></pre><button class="button secondary full" id="copy-config">复制连接配置</button><a class="button primary full" href="/api/hermes/credentials">下载私有访问密钥</a><div class="help-item"><span>01</span><div><h3>保存访问密钥</h3><p>先下载访问密钥，将文件中的 AGENT_OFFICE_TOKEN 一行合并到 ~/.hermes/.env；保留原有设置。然后重启 Hermes 或运行 /reload-mcp。</p></div></div><div class="help-item"><span>02</span><div><h3>登记并开始协作</h3><p>让 Hermes 调用 office_register_agent，agent_id 填 hermes。随后领取任务并报告实际进度。</p></div></div><p class="form-note">访问密钥仅供你的 Hermes 使用，请勿分享。连接成功后成员状态会更新；长任务每 30–60 秒上报一次心跳。</p><a href="./hermes-setup.txt" target="_blank" class="text-button" style="margin-top:14px">打开完整接入说明 ↗</a></dialog>
+
+  <dialog id="recruit-dialog" class="dialog" aria-labelledby="recruit-title">
+    <button class="dialog-close icon-button" data-close="recruit-dialog" aria-label="关闭招募窗口"><svg><use href="#i-close"/></svg></button>
+    <h2 id="recruit-title">招募新成员</h2>
+    <p class="modal-description">选一个模型，给它起名字、分配职责和工位。</p>
+    <form id="recruit-form">
+      <div class="model-options" id="model-options"></div>
+      <label class="field-label" for="agent-name">名字</label>
+      <input class="form-input" id="agent-name" maxlength="24" placeholder="例如：灵感搭子" required>
+      <div class="field-row">
+        <div><label class="field-label" for="agent-role">职责</label><span class="select-wrap"><select class="form-input" id="agent-role"><option>通用助手</option><option>代码开发</option><option>内容创作</option><option>资料研究</option><option>设计创意</option><option>数据分析</option></select><svg><use href="#i-down"/></svg></span></div>
+        <div><label class="field-label" for="agent-seat">工位</label><span class="select-wrap"><select id="agent-seat" class="form-input"></select><svg><use href="#i-down"/></svg></span></div>
+      </div>
+      <p class="form-note">新成员加入演示办公室后，可以立刻分配模拟任务。</p>
+      <button class="button primary full" type="submit"><svg><use href="#i-plus"/></svg>加入办公室</button>
+    </form>
+  </dialog>
+
+  <dialog id="task-dialog" class="dialog" aria-labelledby="task-dialog-title">
+    <button class="dialog-close icon-button" data-close="task-dialog" aria-label="关闭新建任务窗口"><svg><use href="#i-close"/></svg></button>
+    <h2 id="task-dialog-title">派一个任务</h2>
+    <p class="modal-description">写清楚想要的结果，再选一位伙伴。</p>
+    <form id="task-form">
+      <label class="field-label" for="task-title">任务名称</label>
+      <input class="form-input" id="task-title" maxlength="80" placeholder="例如：设计新产品的欢迎页面" required>
+      <label class="field-label" for="task-description">任务描述 <span>选填</span></label>
+      <textarea class="form-input" id="task-description" maxlength="400" rows="3" placeholder="想要什么样的结果，有什么限制"></textarea>
+      <div class="field-row">
+        <div><label class="field-label" for="task-agent">交给谁</label><span class="select-wrap"><select class="form-input" id="task-agent" required></select><svg><use href="#i-down"/></svg></span></div>
+        <div><label class="field-label" for="task-priority">优先级</label><span class="select-wrap"><select class="form-input" id="task-priority"><option value="normal">常规</option><option value="high">优先</option></select><svg><use href="#i-down"/></svg></span></div>
+      </div>
+      <p class="form-note">这里的任务是本地模拟，不会调用模型，也不消耗 Token。</p>
+      <button class="button primary full" type="submit"><svg><use href="#i-bolt"/></svg>派发任务</button>
+    </form>
+  </dialog>
+
+  <dialog id="help-dialog" class="dialog" aria-labelledby="help-title">
+    <button class="dialog-close icon-button" data-close="help-dialog" aria-label="关闭使用指南"><svg><use href="#i-close"/></svg></button>
+    <h2 id="help-title">使用指南</h2>
+    <div class="help-item"><span>01</span><div><h3>逛办公室</h3><p>拖动旋转，滚轮或双指缩放。左上角切换全景、工位、休息区和俯瞰视角。</p></div></div>
+    <div class="help-item"><span>02</span><div><h3>找一位伙伴</h3><p>点场景里的机器人，或右侧名单里的名字，打开它的对话。同一栏里可以看当前任务、派任务、让它休息、换工位。</p></div></div>
+    <div class="help-item"><span>03</span><div><h3>一起讨论</h3><p>名单顶部的「公共频道」是所有成员共享的讨论区，可以 @ 伙伴、引用回复、关联任务。</p></div></div>
+    <div class="help-item"><span>04</span><div><h3>看任务走到哪</h3><p>「任务」页按派发、领取、执行、完成四步展示每个任务的位置，点阶段可以筛选。</p></div></div>
+    <p class="help-note">这是演示空间，没有连接真实 Agent。任务进度和回复都是本地模拟。</p>
+    <button class="button primary full" data-close="help-dialog">知道了</button>
+  </dialog>
+
+  <dialog id="connect-dialog" class="dialog" aria-labelledby="connect-title">
+    <button class="dialog-close icon-button" data-close="connect-dialog" aria-label="关闭连接说明"><svg><use href="#i-close"/></svg></button>
+    <h2 id="connect-title">让 Hermes 加入办公室</h2>
+    <p class="modal-description">把下面的配置合并到 Hermes 的 ~/.hermes/config.yaml，保留已有的服务器配置。</p>
+    <pre id="connect-code" class="connection-code"></pre>
+    <div class="dialog-actions"><button class="button secondary" id="copy-config">复制连接配置</button><a class="button primary" href="/api/hermes/credentials">下载访问密钥</a></div>
+    <div class="help-item"><span>01</span><div><h3>保存访问密钥</h3><p>下载访问密钥，把文件里的 AGENT_OFFICE_TOKEN 一行合并到 ~/.hermes/.env，保留原有设置。然后重启 Hermes 或运行 /reload-mcp。</p></div></div>
+    <div class="help-item"><span>02</span><div><h3>登记并开始协作</h3><p>让 Hermes 调用 office_register_agent，agent_id 填 hermes，随后领取任务并上报真实进度。私聊用 office_get_messages / office_reply_message；公共频道用 office_get_channel_messages / office_post_channel_message。</p></div></div>
+    <p class="form-note">访问密钥只给你自己的 Hermes 使用，不要分享。连接成功后成员状态会更新；长任务每 30–60 秒上报一次心跳。</p>
+    <a href="./hermes-setup.txt" target="_blank" rel="noopener" class="text-button">打开完整接入说明 ↗</a>
+  </dialog>
+
+  <dialog id="desks-dialog" class="dialog desks-dialog" aria-labelledby="desks-title">
+    <button class="dialog-close icon-button" data-close="desks-dialog" aria-label="关闭工位管理"><svg><use href="#i-close"/></svg></button>
+    <h2 id="desks-title">工位</h2>
+    <p class="modal-description" id="desk-summary">16 个独立工位</p>
+    <div class="desk-map-caption"><span>窗边</span><span>休息区在右侧 →</span></div>
+    <div id="desk-map" class="desk-map" aria-label="16 个工位"></div>
+    <div class="desk-selection">
+      <strong id="desk-selected">01 号工位</strong><p id="desk-current"></p>
+      <label class="field-label" for="desk-agent">安排哪位伙伴</label>
+      <span class="select-wrap"><select id="desk-agent" class="form-input"></select><svg><use href="#i-down"/></svg></span>
+      <div class="dialog-actions"><button class="button secondary" id="desk-recruit">招募到这里</button><button class="button primary" id="desk-save">安排入座</button></div>
+    </div>
+  </dialog>
+
   <div id="toast" class="toast" role="status"><svg><use href="#i-check"/></svg><span></span></div>
   <script type="module" src="./app.js"></script>
 </body>

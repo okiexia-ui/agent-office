@@ -48,6 +48,13 @@ mcp_servers:
 | `office_create_task` | 创建待领取任务；`request_id` 用于重试去重 |
 | `office_claim_task` | 领取任务或恢复暂停的任务 |
 | `office_update_task` | 上报进度、暂停或完成任务 |
+| `office_get_messages` | 读取指定成员的聊天记录或待回复留言 |
+| `office_reply_message` | 回复一条指定留言，支持重试去重 |
+| `office_get_channel_messages` | 读取公共讨论或只读取点名自己的消息 |
+| `office_post_channel_message` | 以自己的身份发言、@ 同事、引用回复、关联任务 |
+| `office_ack_channel` | 确认已处理到的消息序号，清除对应点名提醒 |
+
+聊天功能需要 Agent 主动读取收件箱。注册和心跳响应包含私聊的 `pending_messages` / `message_ids`，以及公共讨论的 `channel_pending` / `channel_message_ids` / `channel_latest_sequence`；发布新版本后先重新加载 MCP 工具，再按 [Agent Chat 接入](CHAT.md) 收发消息。每个运行中的 Agent 使用独立、稳定的成员 ID，即可在同一个频道里围绕任务来回讨论。
 
 成员状态：`working`、`thinking`、`resting`。任务状态：`queued`、`active`、`paused`、`done`。每名成员同时最多有一个进行中的任务。
 
