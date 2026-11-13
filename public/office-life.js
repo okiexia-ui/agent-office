@@ -33,7 +33,8 @@ export class OfficeLife {
   }
   renderPicker(preserve=false){
     const agents=this.getState().agents,selected=DESKS.find(d=>d.id===this.selected),owner=agents.find(a=>a.seatId===this.selected);
-    $('#desk-map').innerHTML=DESKS.map(d=>{const a=agents.find(a=>a.seatId===d.id);return `<button type="button" class="desk-tile ${a?'occupied':'available'} ${d.id===this.selected?'selected':''}" data-desk="${d.id}" aria-pressed="${d.id===this.selected}" aria-label="${d.label}，${escape(a?.name||'空位')}"><span class="desk-number">${d.id.slice(-2)}</span><span class="desk-owner">${escape(a?.name||'空位')}</span></button>`;}).join('');
+    // Laid out like the room seen from above: window row first, four pods of four.
+    $('#desk-map').innerHTML=[...DESKS].sort((a,b)=>a.z-b.z||a.x-b.x).map(d=>{const a=agents.find(a=>a.seatId===d.id);return `<button type="button" class="desk-tile ${a?'occupied':'available'} ${d.id===this.selected?'selected':''}" data-desk="${d.id}" aria-pressed="${d.id===this.selected}" aria-label="${d.label}，${escape(a?.name||'空位')}"><span class="desk-number">${d.id.slice(-2)}</span><span class="desk-owner">${escape(a?.name||'空位')}</span></button>`;}).join('');
     $('#desk-selected').textContent=selected.label;
     $('#desk-current').textContent=owner?`当前属于 ${owner.name}，选择其他成员可交换工位。`:'这张桌子还空着，安排一位伙伴入座吧。';
     const previous=$('#desk-agent').value;
@@ -58,7 +59,7 @@ export class OfficeLife {
     this.renderPicker();
   }
   play(kind){
-    const captions={coffee:'咖啡在冒热气。停一下，好点子也要时间冲泡。',cat:'小猫伸了个懒腰，今天的陪伴不限量。',celebrate:'给每一点小进展，撒一把彩纸。'};
+    const captions={coffee:'咖啡在冒热气。停一下，好点子也要时间冲泡。',cat:'小猫伸了个懒腰，今天的陪伴不限量。',celebrate:'给每一点小进展，撒一把彩纸。',vacuum:'扫地机器人转了两圈：这条走道刚扫过。',pingpong:'两位伙伴同时去休息，就会在这里打一局。'};
     if(!captions[kind])return;
     this.getScene()?.playActivity(kind);
     $('#office-moment').textContent=captions[kind];
