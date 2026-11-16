@@ -247,6 +247,7 @@ function changeView(next) {
   });
   $('#stage').scrollTop = 0;
   if (next === 'tasks') renderTasks(); else if (next === 'members') renderMembers();
+  if (SMALL.matches) window.scrollTo(0, 0);
   if (next === 'office') requestAnimationFrame(() => scene?.resize());
   else { expand(false); playEnter(next === 'tasks' ? $('#task-board') : $('#member-grid')); }
 }
@@ -289,15 +290,25 @@ function showTask(id) {
     card.classList.add('flash'); setTimeout(() => card.classList.remove('flash'), 1800);
   });
 }
-function setCamera(preset) {
+function showCameraView(preset) {
   $$('[data-camera]').forEach(button => button.setAttribute('aria-pressed', String(button.dataset.camera === preset)));
-  scene?.setView(preset);
+  $('#camera-view-name').textContent = ({overview:'全景',work:'工位',lounge:'休息区',top:'俯瞰'})[preset] || '自由';
 }
+function showZoom(value) {
+  $('#zoom-value').textContent = value + '%';
+  $('#zoom-slider').value = String(value);
+  $('#zoom-slider').setAttribute('aria-valuetext', value + '%');
+  $('#zoom-out').disabled = value <= 50; $('#zoom-in').disabled = value >= 320;
+}
+function setCamera(preset) { showCameraView(preset); scene?.setView(preset); }
+
 function expand(expanded) {
   if (document.body.classList.contains('expanded-mode') === expanded) return;
   document.body.classList.toggle('expanded-mode', expanded);
+  $('.topbar').inert = expanded;
   const label = expanded ? '退出展开' : '展开办公室';
   $('#expand-btn').setAttribute('aria-label', label); $('#expand-btn').title = label;
+  $('#expand-btn').setAttribute('aria-expanded', String(expanded));
   $('#expand-btn').innerHTML = icon(expanded ? 'close' : 'expand');
   requestAnimationFrame(() => scene?.resize());
 }
@@ -342,7 +353,7 @@ function completeTask(t) {
 document.addEventListener('click', event => {
   const target = event.target;
   const chatButton = target.closest('[data-chat]'); if (chatButton) { openChat(chatButton.dataset.chat); return; }
-  const nav = target.closest('[data-view]'); if (nav) changeView(nav.dataset.view);
+  const nav = target.closest('button[data-view], a[data-view]'); if (nav) changeView(nav.dataset.view);
   const close = target.closest('[data-close]'); if (close) closeDialog(close.dataset.close);
   const team = target.closest('[data-team-filter]'); if (team) { teamFilter = team.dataset.teamFilter; renderTeam(); }
   const member = target.closest('[data-member-filter]'); if (member) { memberFilter = member.dataset.memberFilter; renderMembers(); }
@@ -408,6 +419,23 @@ $('#task-form').addEventListener('submit', event => {
   closeDialog('task-dialog'); updateState();
   toast(DEMO ? `已交给 ${a.name}` : `任务已排队，等待 ${a.name} 领取`);
 });
+$$('[data-orbit]').forEach(button => button.onclick = () => {
+  const direction = {left:[-.22,0],right:[.22,0],up:[0,-.15],down:[0,.15]}[button.dataset.orbit];
+  scene?.orbit(...direction);
+});
+$('#pan-toggle').onclick = () => {
+  const pan = $('#pan-toggle').getAttribute('aria-pressed') !== 'true';
+  $('#pan-toggle').setAttribute('aria-pressed', String(pan));
+  $('#camera-help').textContent = pan ? '拖动平移 · 滚轮 / 双指缩放' : '拖动旋转 · 滚轮 / 双指缩放';
+  scene?.setDragMode(pan ? 'pan' : 'rotate');
+};
+$('#labels-toggle').onclick = () => {
+  const visible = $('#labels-toggle').getAttribute('aria-pressed') !== 'true';
+  $('#labels-toggle').setAttribute('aria-pressed', String(visible));
+  $('#agent-labels').hidden = !visible;
+  if (visible) scene?.resize();
+};
+$('#zoom-slider').addEventListener('input', event => scene?.setZoom(Number(event.target.value) / 100));
 $('#zoom-in').onclick = () => scene?.zoom(.15);
 $('#zoom-out').onclick = () => scene?.zoom(-.15);
 $('#reset-view').onclick = () => setCamera('overview');
@@ -464,7 +492,7 @@ playEnter($('#team-list'));
 if (!DEMO) await syncCloud();
 try {
   const {OfficeScene} = await import('./scene.js');
-  scene = new OfficeScene($('#canvas-container'), $('#agent-labels'), id => openChat(id), value => $('#zoom-value').textContent = value + '%', id => officeLife.open(id), kind => officeLife.play(kind));
+  scene = new OfficeScene($('#canvas-container'), $('#agent-labels'), id => openChat(id), showZoom, id => officeLife.open(id), kind => officeLife.play(kind), showCameraView);
   scene.updateAgents(state.agents); scene.setNight(state.night); scene.setPaused(state.paused); scene.select(selectedAgent);
   $('#scene-loading').hidden = true;
 } catch (error) {
