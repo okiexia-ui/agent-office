@@ -349,7 +349,7 @@ export class OfficeScene {
  resize(){
   const w=this.container.clientWidth,h=this.container.clientHeight;if(!w||!h)return;
   for(const label of this.labels.children)label.labelWidth=0;
-  this.renderer.setSize(w,h,false);Object.assign(this.camera,cameraFrame(w,h));this.camera.updateProjectionMatrix();
+  this.renderer.setSize(w,h,false);Object.assign(this.camera,cameraFrame(w,h,document.body.classList.contains('embedded-office')));this.camera.updateProjectionMatrix();
  }
  settleCamera(){const damping=this.controls.enableDamping;this.controls.enableDamping=false;this.controls.update();this.controls.enableDamping=damping;this.cameraAnimation=null;}
  setView(view){
