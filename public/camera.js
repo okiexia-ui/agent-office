@@ -19,8 +19,8 @@ const projected = ROOM_CORNERS.map(point => point.clone().applyMatrix4(reference
 const minX = Math.min(...projected.map(p => p.x)), maxX = Math.max(...projected.map(p => p.x));
 const minY = Math.min(...projected.map(p => p.y)), maxY = Math.max(...projected.map(p => p.y));
 
-export function cameraFrame(width, height) {
-  const side = 14, top = 64, bottom = 18;
+export function cameraFrame(width, height, compact = false) {
+  const side = 14, top = compact ? 42 : 64, bottom = compact ? 10 : 18;
   const scale = Math.max((maxX - minX) / Math.max(1, width - side * 2), (maxY - minY) / Math.max(1, height - top - bottom));
   const halfWidth = width * scale / 2, halfHeight = height * scale / 2;
   const centerX = (minX + maxX) / 2, centerY = (minY + maxY) / 2 + (top - bottom) * scale / 2;

@@ -1,6 +1,7 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import {createHash} from 'node:crypto';
+import {spawnSync} from 'node:child_process';
 const root=path.resolve(import.meta.dirname,'..');
 const publicDir=path.join(root,'public');
 const types={'.html':'text/html; charset=utf-8','.css':'text/css; charset=utf-8','.js':'text/javascript; charset=utf-8','.svg':'image/svg+xml','.txt':'text/plain; charset=utf-8','.yaml':'text/plain; charset=utf-8','.json':'application/json; charset=utf-8'};
@@ -11,8 +12,11 @@ const tag=body=>'"'+createHash('sha256').update(body).digest('hex').slice(0,20)+
 await visit(publicDir);
 for(const asset of Object.values(assets))asset.etag=tag(asset.body);
 const shared=await fs.readFile(path.join(publicDir,'layout.js'),'utf8');
-const core=(await fs.readFile(path.join(root,'worker/index.js'),'utf8')).replace("import {DESKS, assignSeats} from '../public/layout.js';",shared);
+const workspace=await fs.readFile(path.join(root,'worker/workspace.js'),'utf8');
+const core=(await fs.readFile(path.join(root,'worker/index.js'),'utf8')).replace("import {DESKS, assignSeats} from '../public/layout.js';",()=>shared).replace("import {WORKSPACE_TOOLS, callWorkspaceTool} from './workspace.js';",()=>workspace);
 const out=path.join(root,'dist/server');await fs.mkdir(out,{recursive:true});
 await fs.writeFile(path.join(out,'index.js'),core+'\nconst ASSETS='+JSON.stringify(assets)+';\nexport default createWorker(ASSETS);\n');
+const syntax=spawnSync(process.execPath,['--check',path.join(out,'index.js')],{stdio:'inherit'});
+if(syntax.status!==0)throw new Error('Built Worker failed syntax validation.');
 await fs.mkdir(path.join(root,'dist/.openai'),{recursive:true});await fs.copyFile(path.join(root,'.openai/hosting.json'),path.join(root,'dist/.openai/hosting.json'));
 console.log(JSON.stringify({assets:Object.keys(assets).length,workerBytes:(await fs.stat(path.join(out,'index.js'))).size}));
