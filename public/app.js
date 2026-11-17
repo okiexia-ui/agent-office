@@ -9,6 +9,8 @@ const esc = value => String(value ?? '').replace(/[&<>"']/g, char => ({'&':'&amp
 const icon = name => `<svg aria-hidden="true"><use href="#i-${name}"/></svg>`;
 const STORAGE_KEY = 'agent-office-state-v1';
 const DEMO = new URLSearchParams(window.location.search).get('demo') === '1';
+const EMBED = new URLSearchParams(location.search).get('embed') === '1' && window.parent !== window;
+if(EMBED)document.body.classList.add('embedded-office');
 const LOCAL = ['localhost','127.0.0.1','[::1]'].includes(window.location.hostname);
 const MCP_URL = LOCAL ? window.location.origin + '/mcp' : window.location.origin + '/api/hermes/mcp';
 const AWAY_AFTER = 300000;
@@ -23,7 +25,7 @@ let state = DEMO
   ? {...initialState(), night:systemDark}
   : {version:1,revision:0,night:systemDark,paused:false,agents:[{id:'hermes',name:'Hermes',model:'Hermes',role:'等待 Hermes 连接',status:'resting',completed:0,lastSeen:null}],tasks:[],activities:[]};
 try {
-  if (DEMO) { const saved = JSON.parse(localStorage.getItem(STORAGE_KEY)); if (validState(saved)) state = saved; }
+  if (DEMO && !EMBED) { const saved = JSON.parse(localStorage.getItem(STORAGE_KEY)); if (validState(saved)) state = saved; }
   else { const stored = localStorage.getItem('agent-office-night'); if (stored !== null) state.night = stored === '1'; }
 } catch {}
 let scene = null, view = 'office', teamFilter = 'all', memberFilter = 'all', taskFilter = 'all', selectedAgent = null, lastAgent = null, selectedModel = 'ChatGPT', toastTimer;
@@ -156,7 +158,7 @@ function renderChrome() {
   $('#sync-pill').className = 'sync-pill ' + tone;
   $('#sync-text').textContent = text;
   $('#mode-link').textContent = DEMO ? (LOCAL ? '本机实时' : '返回实时') : '体验演示';
-  $('#mode-link').href = DEMO ? './' : '?demo=1';
+  $('#mode-link').href = DEMO ? './office.html' : './office.html?demo=1';
   const toggle = $('#simulation-toggle'), toggleLabel = DEMO ? (state.paused ? '继续模拟' : '暂停模拟') : '刷新状态';
   setHTML(toggle, icon(DEMO ? (state.paused ? 'play' : 'pause') : 'reset'));
   toggle.setAttribute('aria-label', toggleLabel); toggle.title = toggleLabel;
@@ -269,6 +271,7 @@ function restoreOpener(fallback) {
 }
 function openChat(id) {
   if (!state.agents.some(a => a.id === id)) return;
+  if(EMBED){window.parent.postMessage({type:'office-select-agent',agentId:id},location.origin);return;}
   rememberOpener();
   expand(false);
   if ($('#channel-dialog').open) $('#channel-dialog').close();
@@ -463,7 +466,7 @@ $$('dialog.dialog').forEach(dialog => dialog.addEventListener('click', event => 
 
 // Demo only: simulated progress. Live offices show what Agents actually report.
 setInterval(() => {
-  if (!DEMO || state.paused || document.hidden) return;
+  if (!DEMO || EMBED || state.paused || document.hidden) return;
   let changed = false, positions = false;
   for (const t of state.tasks) {
     if (t.status !== 'active') continue;
@@ -527,3 +530,15 @@ if (LOCAL) {
   $('#connect-dialog .help-item p').textContent = '保持 npm run dev 运行。这个地址只接受本机连接，不访问线上办公室的数据，也不需要线上密钥。';
   $('#connect-dialog .form-note').textContent = '上线后使用线上地址和原有的私有访问密钥。聊天不会自动唤醒 Agent，需要它持续读取消息。';
 }
+
+if($('#workspace-link'))$('#workspace-link').href=DEMO?'./?demo=1':'./';
+if(new URLSearchParams(location.search).get('connect')==='1')openDialog('connect-dialog');
+
+if(EMBED)window.addEventListener('message',event=>{
+  if(event.origin!==location.origin||event.source!==window.parent)return;
+  if(event.data?.type==='office-visibility'){scene?.renderer.setAnimationLoop(event.data.visible?scene.animate:null);if(event.data.visible)scene?.resize();}
+  if(event.data?.type==='office-focus-agent'&&(event.data.agentId===null||state.agents.some(a=>a.id===event.data.agentId))){selectedAgent=event.data.agentId;scene?.select(selectedAgent);}
+  if(event.data?.type==='office-demo-state'&&DEMO&&validState(event.data.state)){state={...event.data.state,night:state.night,paused:false};displayState();}
+  if(event.data?.type==='office-theme'&&typeof event.data.night==='boolean'){state.night=event.data.night;scene?.setNight(state.night);render();}
+});
+if(EMBED)window.parent.postMessage({type:'office-ready'},location.origin);

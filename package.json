@@ -1,6 +1,6 @@
 {
   "name": "agent-office",
-  "version": "2.2.0",
+  "version": "2.3.1",
   "private": true,
   "type": "module",
   "description": "An interactive 3D office with persistent state and Hermes MCP connectivity",

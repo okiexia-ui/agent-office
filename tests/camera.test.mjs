@@ -39,3 +39,11 @@ test('Zoom input is bounded and recovers from invalid values', () => {
   assert.equal(boundedZoom(0),.5); assert.equal(boundedZoom(99),3.2);
   assert.equal(boundedZoom(NaN),1); assert.equal(boundedZoom(1.85),1.85);
 });
+
+test('Embedded office fits its compact toolbar and stays within the shorter scene',()=>{
+ for(const [width,height] of [[620,270],[370,160]]){
+  const camera=new OrthographicCamera(-1,1,1,-1,.1,150);camera.position.set(...CAMERA_PRESETS.overview.pos);camera.lookAt(new Vector3(...CAMERA_PRESETS.overview.target));
+  Object.assign(camera,cameraFrame(width,height,true));camera.updateProjectionMatrix();camera.updateMatrixWorld();
+  for(const corner of ROOM_CORNERS){const p=corner.clone().project(camera),x=(p.x+1)*width/2,y=(1-p.y)*height/2;assert.ok(x>=13.9&&x<=width-13.9);assert.ok(y>=41.9&&y<=height-9.9);}
+ }
+});
