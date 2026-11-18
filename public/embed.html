@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="robots" content="noindex">
+  <title>Agent Office · 办公室场景</title>
+  <link rel="icon" href="./favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="./style.css">
+  <link rel="stylesheet" href="./office.css">
+  <script type="importmap">{"imports":{"three":"./vendor/three.module.js"}}</script>
+</head>
+<!-- The 3D office shown inside the workspace. It renders state sent by the parent page
+     and never polls the server itself; the complete office lives at office.html. -->
+<body class="embedded-office">
+  <script>try{var v=localStorage.getItem('agent-office-night');if(v==='1'||(v==null&&matchMedia('(prefers-color-scheme: dark)').matches))document.body.classList.add('night')}catch(e){}</script>
+  <svg class="icon-library" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+    <symbol id="i-office" viewBox="0 0 24 24"><path d="m3 8 9-5 9 5v9l-9 5-9-5Z M3 8l9 5 9-5 M12 13v9 M7.5 5.5l9 5v5"/></symbol>
+    <symbol id="i-grid" viewBox="0 0 24 24"><rect x="4" y="4" width="6" height="6" rx="1.5"/><rect x="14" y="4" width="6" height="6" rx="1.5"/><rect x="4" y="14" width="6" height="6" rx="1.5"/><rect x="14" y="14" width="6" height="6" rx="1.5"/></symbol>
+    <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14 M5 12h14"/></symbol>
+    <symbol id="i-minus" viewBox="0 0 24 24"><path d="M5 12h14"/></symbol>
+    <symbol id="i-reset" viewBox="0 0 24 24"><path d="M3 10a9 9 0 1 1 2 8 M3 4v6h6"/></symbol>
+    <symbol id="i-coffee" viewBox="0 0 24 24"><path d="M4 8h12v7a5 5 0 0 1-5 5H9a5 5 0 0 1-5-5Z M16 9h2a3 3 0 0 1 0 6h-2 M7 2v3 M12 2v3"/></symbol>
+    <symbol id="i-spark" viewBox="0 0 24 24"><path d="m12 3 2.5 6.5L21 12l-6.5 2.5L12 21l-2.5-6.5L3 12l6.5-2.5Z M20 2v4 M18 4h4"/></symbol>
+    <symbol id="i-cat" viewBox="0 0 24 24"><path d="M4 12V3l5 4h6l5-4v9a8 8 0 0 1-16 0Z M8 12h.01 M16 12h.01 M10 16l2 1 2-1"/></symbol>
+  </svg>
+  <div class="app">
+    <main class="stage">
+      <section class="space" aria-label="3D 办公空间">
+        <h1 class="sr-only">AI 办公室</h1>
+        <div class="scene-viewport">
+          <div id="canvas-container" role="group" aria-label="可旋转的 3D 办公室"></div>
+          <div id="agent-labels" class="agent-labels"></div>
+          <div class="scene-top" id="scene-top">
+            <div class="float segmented" role="group" aria-label="切换视角">
+              <button data-camera="overview" aria-pressed="true">全景</button>
+              <button data-camera="work" aria-pressed="false">工位</button>
+              <button data-camera="lounge" aria-pressed="false">休息区</button>
+              <button data-camera="top" aria-pressed="false">俯瞰</button>
+            </div>
+          </div>
+          <div class="scene-loading" id="scene-loading"><span class="loader-orbit"></span><p>正在打开办公室</p></div>
+          <p id="office-moment" class="office-moment" role="status"></p>
+        </div>
+        <div class="camera-dock" id="camera-dock" aria-label="视角控制">
+          <div class="camera-tools">
+            <div class="zoom-controls" role="group" aria-label="视角与缩放">
+              <button class="tool-button view-cycle" id="view-cycle" aria-label="切换视角，当前全景" title="切换视角"><svg><use href="#i-grid"/></svg><span id="view-name">全景</span></button>
+              <button class="icon-button" id="zoom-out" aria-label="缩小" title="缩小（−）"><svg><use href="#i-minus"/></svg></button>
+              <button class="icon-button" id="zoom-in" aria-label="放大" title="放大（+）"><svg><use href="#i-plus"/></svg></button>
+              <button class="tool-button" id="reset-view" aria-label="回到全景" title="回到全景（0）"><svg><use href="#i-reset"/></svg><span>复位</span></button>
+            </div>
+          </div>
+        </div>
+      </section>
+    </main>
+  </div>
+  <p class="sr-only" id="camera-help">拖动旋转，滚轮或双指缩放，点击伙伴开始私聊</p>
+  <script type="module" src="./embed.js"></script>
+</body>
+</html>

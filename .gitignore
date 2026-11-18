@@ -12,3 +12,4 @@ agent-office.env
 .sites-runtime/
 *.log
 .office-local/
+release/

@@ -1,0 +1,11 @@
+node_modules/
+dist/
+public/vendor/
+docs/
+*.html
+*.md
+*.yaml
+*.txt
+package-lock.json
+.office-local/
+.openai/
