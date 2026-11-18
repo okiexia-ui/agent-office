@@ -29,10 +29,11 @@ const FILTERS = [
 ];
 
 let stateTag = null,
+  confirmedState = null,
   cloudReady = false,
   syncFailures = 0,
   saving = false,
-  polling = false,
+  activePoll = null,
   storageAvailable = true;
 const systemDark = matchMedia('(prefers-color-scheme: dark)').matches;
 let state = DEMO
@@ -134,16 +135,22 @@ function displayState(positions = true) {
     scene.setPaused(state.paused);
   }
 }
-function acceptCloud(data) {
+function restoreConfirmedState() {
+  state = {...structuredClone(confirmedState), night: state.night, paused: false};
+}
+function acceptCloud(data, etag = null) {
   if (!validState(data) || !Number.isInteger(data.revision)) throw new Error('服务器返回了无效数据');
-  state = {...data, agents: assignSeats(data.agents), night: state.night, paused: false};
+  confirmedState = data;
+  stateTag = etag;
+  restoreConfirmedState();
   cloudReady = true;
   syncFailures = 0;
   displayState();
 }
 async function syncCloud() {
-  if (DEMO || polling || saving) return;
-  polling = true;
+  if (DEMO || activePoll || saving) return;
+  const poll = Symbol();
+  activePoll = poll;
   try {
     // The server answers 304 while the office is unchanged; presence still ages, so redraw.
     const response = await fetch('/api/state', {
@@ -151,21 +158,23 @@ async function syncCloud() {
       cache: 'no-store',
       signal: AbortSignal.timeout(8000)
     });
-    if (response.status === 304 && cloudReady) {
+    if (activePoll !== poll) return;
+    if (response.status === 304 && stateTag && cloudReady) {
       syncFailures = 0;
       displayState();
       return;
     }
     if (!response.ok) throw new Error('云端暂时不可用');
     const data = await response.json();
-    stateTag = response.headers.get('etag');
-    if (!saving && (data.revision ?? -1) >= (state.revision ?? -1)) acceptCloud(data);
+    if (activePoll === poll) acceptCloud(data, response.headers.get('etag'));
   } catch {
+    if (activePoll !== poll) return;
+    stateTag = null;
     cloudReady = false;
     syncFailures++;
     render();
   } finally {
-    polling = false;
+    if (activePoll === poll) activePoll = null;
   }
 }
 async function updateState({positions = true, localOnly = false} = {}) {
@@ -180,6 +189,8 @@ async function updateState({positions = true, localOnly = false} = {}) {
     return false;
   }
   saving = true;
+  // A read started before this edit must never replace its outcome or its ETag.
+  activePoll = null;
   const payload = structuredClone(state);
   displayState(positions);
   try {
@@ -197,13 +208,16 @@ async function updateState({positions = true, localOnly = false} = {}) {
     return true;
   } catch (error) {
     toast(error.message);
-    saving = false;
-    await syncCloud();
-    return false;
+    stateTag = null;
+    cloudReady = false;
+    restoreConfirmedState();
+    displayState();
   } finally {
     saving = false;
     render();
   }
+  await syncCloud();
+  return false;
 }
 
 // ---- Small view helpers ---------------------------------------------------
@@ -728,6 +742,7 @@ $('.brand').onclick = event => {
 $('#member-search').addEventListener('input', renderMembers);
 $('#recruit-form').addEventListener('submit', event => {
   event.preventDefault();
+  if (!DEMO && (!cloudReady || saving)) return;
   const name = $('#agent-name').value.trim();
   if (!name) {
     $('#agent-name').setCustomValidity('请为新伙伴起个名字');
@@ -753,6 +768,7 @@ $('#agent-name').addEventListener('input', event => event.target.setCustomValidi
 $('#task-title').addEventListener('input', event => event.target.setCustomValidity(''));
 $('#task-form').addEventListener('submit', event => {
   event.preventDefault();
+  if (!DEMO && (!cloudReady || saving)) return;
   const title = $('#task-title').value.trim();
   if (!title) {
     $('#task-title').setCustomValidity('请填写任务名称');
