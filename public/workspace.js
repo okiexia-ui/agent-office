@@ -289,11 +289,20 @@ function renderSteps() {
   );
 }
 async function renderVisuals() {
+  // A live link can open before the first sync has supplied the list.
+  if (!demo && syncScope === null) {
+    $('#visual-content').textContent = '正在同步成果…';
+    return;
+  }
   const items = scopeList(visuals);
   $('#result-tab-count').textContent = items.length || '';
   $('#mobile-result-count').textContent = items.length || '';
   $('#visual-count').textContent = items.length ? String(items.length).padStart(2, '0') : '';
-  if (!items.some(v => v.id === selectedVisual)) selectedVisual = items[0]?.id || null;
+  if (selectedVisual && !items.some(v => v.id === selectedVisual)) {
+    selectedVisual = null;
+    updateURL();
+  }
+  selectedVisual ??= items[0]?.id ?? null;
   setHTML(
     $('#visual-picker'),
     items

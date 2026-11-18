@@ -38,14 +38,14 @@
 
 ## 本地预览与检查
 
-需要 Node.js 20.11 或更新版本。Three.js 已随项目提供；`npm install` 只安装构建与格式化工具（esbuild、Prettier）。
+需要 Node.js 20.11 或更新版本。Three.js 已随项目提供。`npm install` 会安装本机预览、构建和测试所用的开发依赖。
 
 ```bash
 git clone https://github.com/okiexia-ui/agent-office.git
 cd agent-office
 npm install
 npm run check      # 语法与格式
-npm test           # 61 项自动测试
+npm test           # 服务端、存储和构建回归测试
 npm run dev        # 开发预览：未打包的源文件，修改后刷新即可
 ```
 
@@ -53,11 +53,14 @@ npm run dev        # 开发预览：未打包的源文件，修改后刷新即�
 | --- | --- |
 | `npm run build` | 生成正式构建 `dist/server/index.js`，并列出各页面的下载量 |
 | `npm run preview` | 在 <http://127.0.0.1:3090/> 运行正式构建（打包文件、缓存头、Service Worker） |
+| `npm run test:browser` | 使用 Chromium 验证重连、保存回滚、成果链接和首次离线打开 |
 | `npm run package` | 重新构建并生成 Sites 部署包 `release/agent-office-<版本>-sites.tar.gz` 和校验值 |
 | `npm run format` | 按 Prettier 规则格式化代码 |
 | `npm run icons` | 在 macOS 上由 `public/icons/*.svg` 重新生成应用图标 PNG |
 
-打开 <http://127.0.0.1:3080/?demo=1> 体验本地演示。打开 <http://127.0.0.1:3080/> 测试同一套 Worker API 和真实 Agent 消息协议；本机数据写入已忽略的 `.office-local/`（办公室状态在 `state.json`，成果正文在 `objects/`），不会访问线上数据库。使用 `OFFICE_PORT` 可更改端口。
+打开 <http://127.0.0.1:3080/?demo=1> 体验本地演示。打开 <http://127.0.0.1:3080/> 测试 Worker API 和真实 Agent 消息协议。开发服务和正式预览共用 `.office-local/`。办公室状态在 `state.json`，成果正文在 `objects/`。两个进程通过文件锁协调写入。使用 `OFFICE_PORT` 可更改端口。
+
+首次运行浏览器回归测试前，执行 `npx playwright-core install --only-shell chromium`，或将 `CHROMIUM_EXECUTABLE_PATH` 指向已有的 Chromium 可执行文件。测试会为每个场景创建独立的办公室数据和浏览器上下文。
 
 本机 MCP 地址为 `http://127.0.0.1:3080/mcp`，仅供同一电脑上的 Agent 连接。云端运行仍需原有 Sites 认证和 R2 绑定。
 

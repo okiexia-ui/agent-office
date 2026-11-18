@@ -138,3 +138,47 @@ test('Visuals saved inline by older versions stay readable and move out on the n
   assert.equal(stateObject(e).visuals.length, 2);
   assert.ok(e.BUCKET.objects.has(STATE_KEY));
 });
+
+test('A visual survives a lost index acknowledgement, including an interrupted readback', async () => {
+  for (const interruptReadback of [false, true]) {
+    class InterruptedBucket extends MemoryBucket {
+      loseAcknowledgement = true;
+      failRead = false;
+      async put(key, body, options) {
+        const saved = await super.put(key, body, options);
+        if (key === STATE_KEY && saved && this.loseAcknowledgement) {
+          this.loseAcknowledgement = false;
+          this.failRead = interruptReadback;
+          throw Error('Write acknowledgement lost');
+        }
+        return saved;
+      }
+      async get(key) {
+        if (key === STATE_KEY && this.failRead) {
+          this.failRead = false;
+          throw Error('Readback unavailable');
+        }
+        return super.get(key);
+      }
+    }
+    const e = {BUCKET: new InterruptedBucket()};
+    if (interruptReadback) await assert.rejects(publish(e), /acknowledgement lost/);
+    else await publish(e);
+    const id = stateObject(e).visuals[0].id;
+    assert.equal((await callTool('office_get_visual', {visual_id: id}, e)).visual.content, chart().content);
+    assert.equal((await publish(e)).visual.id, id);
+    assert.deepEqual(e.BUCKET.keys('office/visuals/'), [`office/visuals/${id}.json`]);
+  }
+});
+
+test('Only an identical retry repairs the missing body of a retained visual', async () => {
+  const e = environment();
+  const {visual} = await publish(e);
+  const key = `office/visuals/${visual.id}.json`;
+  await e.BUCKET.delete(key);
+  await assert.rejects(publish(e, {title: 'changed'}), /different content/);
+  assert.equal(await e.BUCKET.head(key), null);
+  assert.equal((await publish(e)).visual.id, visual.id);
+  assert.equal((await callTool('office_get_visual', {visual_id: visual.id}, e)).visual.content, chart().content);
+  assert.deepEqual(e.BUCKET.keys('office/visuals/'), [key]);
+});

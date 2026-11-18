@@ -15,9 +15,9 @@ Hermes ── 私有服务访问请求头 ──┘
 ## 构建与发布
 
 ```bash
-npm install          # 构建与格式化工具：esbuild、Prettier
+npm install          # 本机预览、构建与测试依赖
 npm run check        # 语法与格式
-npm test             # 61 项测试，含一次完整的正式构建
+npm test             # 服务端、存储和正式构建测试
 npm run package      # 构建并生成 release/agent-office-<版本>-sites.tar.gz 与 SHA256SUMS.txt
 ```
 
@@ -85,7 +85,7 @@ GitHub 中的代码备份不包括 R2 中的运行数据。迁移或备份办公
 
 ## 已有检查
 
-`npm test` 包含 61 项测试，覆盖 MCP 握手、工具发现、成员登记、任务流程、消息收发、并发去重、输入验证、工位与相机布局、公共频道协作、Visual 归属与独立存储、旧数据迁移、同步与 304、执行记录、HTML 隔离、保留策略、名称标签排布，以及正式构建的页面引用、缓存头、应用清单、Service Worker 与体积预算。测试使用内存存储替身，不替代部署后的身份认证与实际 R2 验证。
+`npm test` 覆盖 MCP、成员与任务、聊天、成果保留与迁移、同步、场景布局和正式构建。存储测试使用临时目录验证两个进程的条件写入，使用内存存储模拟提交后回执丢失。`npm run test:browser` 从正式构建验证重连、保存回滚、历史成果链接和首次离线打开。浏览器安装步骤见 [README](../README.md#本地预览与检查)。
 
 ## 发布 2.4.0 后
 

@@ -155,8 +155,12 @@ export async function build({outDir = path.join(root, 'dist')} = {}) {
     )
     .sort()
     .map(p => '.' + p);
-  const version = hash(precache.map(p => p + hash(assets.get(p.slice(1)).body)).join('\n')).slice(0, 12);
   const template = await fs.readFile(path.join(root, 'scripts/service-worker.js'), 'utf8');
+  const versionedFiles = [...precache, ...Object.keys(PAGES).map(name => './' + name)];
+  const version = hash([template, ...versionedFiles.map(p => p + hash(assets.get(p.slice(1)).body))].join('\n')).slice(
+    0,
+    12
+  );
   add(
     '/sw.js',
     template
