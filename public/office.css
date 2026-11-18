@@ -1,13 +1,39 @@
 /* The 3D stage, its floating controls, in-scene labels and the desk map.
    The canvas is transparent: the dotted paper of .stage shows through, so the office sits on the page. */
 
-.space { position: absolute; inset: 0; display: grid; grid-template-rows: minmax(0, 1fr) auto auto; min-height: 0; overflow: hidden; }
-.scene-viewport { position: relative; min-height: 0; overflow: hidden; }
-#canvas-container { position: absolute; inset: 0; touch-action: none; cursor: grab; }
-#canvas-container:active { cursor: grabbing; }
-#canvas-container[data-drag-mode="pan"] { cursor: move; }
-#canvas-container canvas { display: block; width: 100%; height: 100%; }
-#canvas-container canvas:focus-visible { outline-offset: -3px; }
+.space {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  grid-template-rows: minmax(0, 1fr) auto auto;
+  min-height: 0;
+  overflow: hidden;
+}
+.scene-viewport {
+  position: relative;
+  min-height: 0;
+  overflow: hidden;
+}
+#canvas-container {
+  position: absolute;
+  inset: 0;
+  touch-action: none;
+  cursor: grab;
+}
+#canvas-container:active {
+  cursor: grabbing;
+}
+#canvas-container[data-drag-mode='pan'] {
+  cursor: move;
+}
+#canvas-container canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+#canvas-container canvas:focus-visible {
+  outline-offset: -3px;
+}
 
 .float {
   display: inline-flex;
@@ -22,9 +48,21 @@
   box-shadow: var(--shadow-1);
   pointer-events: auto;
 }
-.float .icon-button { width: 28px; height: 28px; border-radius: 8px; }
-.float .icon-button svg { width: 16px; height: 16px; }
-.float-divider { width: 1px; height: 16px; margin: 0 3px; background: var(--line); }
+.float .icon-button {
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+}
+.float .icon-button svg {
+  width: 16px;
+  height: 16px;
+}
+.float-divider {
+  width: 1px;
+  height: 16px;
+  margin: 0 3px;
+  background: var(--line);
+}
 
 .scene-top {
   position: absolute;
@@ -37,9 +75,13 @@
   gap: 10px;
   pointer-events: none;
 }
-.scene-top { top: 14px; }
+.scene-top {
+  top: 14px;
+}
 
-.segmented button, .rituals button, .tool-button {
+.segmented button,
+.rituals button,
+.tool-button {
   display: inline-flex;
   align-items: center;
   gap: 6px;
@@ -50,42 +92,180 @@
   font-weight: 500;
   color: var(--ink-2);
   white-space: nowrap;
-  transition: background-color .18s var(--ease), color .18s var(--ease), transform .12s var(--ease);
+  transition:
+    background-color 0.18s var(--ease),
+    color 0.18s var(--ease),
+    transform 0.12s var(--ease);
 }
-.segmented button:hover, .rituals button:hover, .tool-button:hover { background: var(--paper-2); color: var(--ink); }
-.segmented button:active, .rituals button:active, .tool-button:active { transform: scale(.96); }
-.segmented button[aria-pressed="true"] { background: var(--ink); color: var(--paper); }
-.rituals svg, .tool-button svg { width: 15px; height: 15px; }
-.tool-button b { font-family: var(--mono); font-size: 11.5px; font-weight: 500; color: var(--ink-3); }
-.rituals button.just-played { background: var(--accent-soft); color: var(--accent-ink); }
-#focus-btn[aria-pressed="true"] { background: var(--ink); color: var(--paper); font-family: var(--mono); font-variant-numeric: tabular-nums; }
+.segmented button:hover,
+.rituals button:hover,
+.tool-button:hover {
+  background: var(--paper-2);
+  color: var(--ink);
+}
+.segmented button:active,
+.rituals button:active,
+.tool-button:active {
+  transform: scale(0.96);
+}
+.segmented button[aria-pressed='true'] {
+  background: var(--ink);
+  color: var(--paper);
+}
+.rituals svg,
+.tool-button svg {
+  width: 15px;
+  height: 15px;
+}
+.tool-button b {
+  font-family: var(--mono);
+  font-size: 11.5px;
+  font-weight: 500;
+  color: var(--ink-3);
+}
+.rituals button.just-played {
+  background: var(--accent-soft);
+  color: var(--accent-ink);
+}
+#focus-btn[aria-pressed='true'] {
+  background: var(--ink);
+  color: var(--paper);
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
+}
 
-.scene-hint { font-size: 11.5px; color: var(--ink-3); white-space: nowrap; }
-#zoom-value { min-width: 42px; text-align: center; font-family: var(--mono); font-size: 12px; color: var(--ink-2); font-variant-numeric: tabular-nums; }
+.scene-hint {
+  font-size: 11.5px;
+  color: var(--ink-3);
+  white-space: nowrap;
+}
+#zoom-value {
+  min-width: 42px;
+  text-align: center;
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--ink-2);
+  font-variant-numeric: tabular-nums;
+}
 
 /* Camera controls never disappear at a narrow breakpoint. They sit outside
    the canvas so the room, names and gestures do not compete for that space. */
-.camera-dock { position: relative; z-index: var(--z-overlay); padding: 10px 16px 12px; border-top: 1px solid var(--line); background: var(--surface); }
-.camera-caption { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 7px; color: var(--ink-3); font-size: 11.5px; }
-.camera-caption strong { font-weight: 600; color: var(--ink); margin-left: 6px; }
-.camera-caption p { text-align: right; }
-.camera-tools { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
-.camera-orbit, .camera-options, .zoom-controls { display: flex; align-items: center; gap: 2px; }
-.camera-orbit { padding: 2px; border-radius: 10px; background: var(--surface-2); }
-.camera-dock .icon-button { width: 36px; height: 36px; flex: none; }
-.camera-dock .tool-button { height: 36px; padding: 0 9px; }
-.camera-options { margin-right: auto; }
-.camera-options button[aria-pressed="true"] { background: var(--paper-2); color: var(--ink); }
-.camera-options #pan-toggle[aria-pressed="true"] { background: var(--accent-soft); color: var(--accent-ink); }
-.zoom-controls { flex: 1; min-width: 270px; max-width: 420px; }
-#zoom-slider { width: 90px; min-width: 40px; flex: 1; height: 32px; margin: 0 4px; accent-color: var(--accent); cursor: ew-resize; }
-#reset-view { margin-left: 5px; border: 1px solid var(--line); background: var(--raised); }
-.office-utilities { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 6px 16px; border-top: 1px solid var(--line-2); background: var(--surface); }
-.office-utilities .rituals { display: flex; align-items: center; gap: 1px; }
-.office-utilities .rituals button { height: 28px; padding: 0 7px; font-size: 11.5px; }
-body.expanded-mode .space { position: fixed; inset: 0; z-index: 60; height: 100dvh; min-height: 0; background: var(--paper); background-image: radial-gradient(circle, var(--dot) 1px, transparent 1.4px); background-size: 22px 22px; }
-body.expanded-mode { overflow: hidden; }
-body.expanded-mode .office-utilities { padding-bottom: max(6px, env(safe-area-inset-bottom)); }
+.camera-dock {
+  position: relative;
+  z-index: var(--z-overlay);
+  padding: 10px 16px 12px;
+  border-top: 1px solid var(--line);
+  background: var(--surface);
+}
+.camera-caption {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 7px;
+  color: var(--ink-3);
+  font-size: 11.5px;
+}
+.camera-caption strong {
+  font-weight: 600;
+  color: var(--ink);
+  margin-left: 6px;
+}
+.camera-caption p {
+  text-align: right;
+}
+.camera-tools {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.camera-orbit,
+.camera-options,
+.zoom-controls {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+.camera-orbit {
+  padding: 2px;
+  border-radius: 10px;
+  background: var(--surface-2);
+}
+.camera-dock .icon-button {
+  width: 36px;
+  height: 36px;
+  flex: none;
+}
+.camera-dock .tool-button {
+  height: 36px;
+  padding: 0 9px;
+}
+.camera-options {
+  margin-right: auto;
+}
+.camera-options button[aria-pressed='true'] {
+  background: var(--paper-2);
+  color: var(--ink);
+}
+.camera-options #pan-toggle[aria-pressed='true'] {
+  background: var(--accent-soft);
+  color: var(--accent-ink);
+}
+.zoom-controls {
+  flex: 1;
+  min-width: 270px;
+  max-width: 420px;
+}
+#zoom-slider {
+  width: 90px;
+  min-width: 40px;
+  flex: 1;
+  height: 32px;
+  margin: 0 4px;
+  accent-color: var(--accent);
+  cursor: ew-resize;
+}
+#reset-view {
+  margin-left: 5px;
+  border: 1px solid var(--line);
+  background: var(--raised);
+}
+.office-utilities {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 6px 16px;
+  border-top: 1px solid var(--line-2);
+  background: var(--surface);
+}
+.office-utilities .rituals {
+  display: flex;
+  align-items: center;
+  gap: 1px;
+}
+.office-utilities .rituals button {
+  height: 28px;
+  padding: 0 7px;
+  font-size: 11.5px;
+}
+body.expanded-mode .space {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  height: 100dvh;
+  min-height: 0;
+  background: var(--paper);
+  background-image: radial-gradient(circle, var(--dot) 1px, transparent 1.4px);
+  background-size: 22px 22px;
+}
+body.expanded-mode {
+  overflow: hidden;
+}
+body.expanded-mode .office-utilities {
+  padding-bottom: max(6px, env(safe-area-inset-bottom));
+}
 
 .office-moment {
   position: absolute;
@@ -101,9 +281,14 @@ body.expanded-mode .office-utilities { padding-bottom: max(6px, env(safe-area-in
   opacity: 0;
   transform: translateY(6px);
   pointer-events: none;
-  transition: opacity .24s var(--ease), transform .24s var(--ease);
+  transition:
+    opacity 0.24s var(--ease),
+    transform 0.24s var(--ease);
 }
-.office-moment.show { opacity: 1; transform: none; }
+.office-moment.show {
+  opacity: 1;
+  transform: none;
+}
 
 .scene-loading {
   position: absolute;
@@ -116,15 +301,44 @@ body.expanded-mode .office-utilities { padding-bottom: max(6px, env(safe-area-in
   color: var(--ink-3);
   pointer-events: none;
 }
-.loader-orbit { width: 26px; height: 26px; border: 2px solid var(--line); border-top-color: var(--accent); border-radius: 50%; animation: spin .8s linear infinite; }
-.scene-error { display: grid; justify-items: center; gap: 10px; max-width: 280px; text-align: center; pointer-events: auto; }
-.scene-error svg { width: 28px; height: 28px; color: var(--ink-4); }
-@keyframes spin { to { transform: rotate(360deg); } }
+.loader-orbit {
+  width: 26px;
+  height: 26px;
+  border: 2px solid var(--line);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+.scene-error {
+  display: grid;
+  justify-items: center;
+  gap: 10px;
+  max-width: 280px;
+  text-align: center;
+  pointer-events: auto;
+}
+.scene-error svg {
+  width: 28px;
+  height: 28px;
+  color: var(--ink-4);
+}
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
 
 /* Labels are positioned by scene.js with a transform; never set transform on them here. */
 
 /* Its own stacking context: scene.js gives each label a depth-sorted z-index that must stay below the floating controls and panes. */
-.agent-labels { position: absolute; inset: 0; z-index: 1; isolation: isolate; overflow: hidden; pointer-events: none; }
+.agent-labels {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  isolation: isolate;
+  overflow: hidden;
+  pointer-events: none;
+}
 .agent-label {
   position: absolute;
   left: 0;
@@ -145,22 +359,80 @@ body.expanded-mode .office-utilities { padding-bottom: max(6px, env(safe-area-in
   pointer-events: auto;
   visibility: hidden;
   will-change: transform;
-  transition: background-color .18s var(--ease), color .18s var(--ease), border-color .18s var(--ease);
+  transition:
+    background-color 0.18s var(--ease),
+    color 0.18s var(--ease),
+    border-color 0.18s var(--ease);
 }
-.agent-label:hover { border-color: var(--ink-3); }
-.agent-label.selected { background: var(--ink); border-color: var(--ink); color: var(--paper); }
-.label-color { width: 8px; height: 8px; border-radius: 3px; flex: none; }
-.label-sleep { font-size: 11px; font-weight: 500; color: var(--ink-3); }
-.agent-label.selected .label-sleep { color: inherit; opacity: .7; }
-.label-name { max-width: 126px; overflow: hidden; text-overflow: ellipsis; }
-.label-busy { display: inline-flex; align-items: flex-end; gap: 2px; height: 10px; }
-.label-busy i { width: 2px; height: 100%; border-radius: 1px; background: var(--ok); transform-origin: bottom; animation: bars 1s ease-in-out infinite; }
-.label-busy i:nth-child(2) { animation-delay: .18s; }
-.label-busy i:nth-child(3) { animation-delay: .36s; }
-@keyframes bars { 0%, 100% { transform: scaleY(.35); } 50% { transform: scaleY(1); } }
+.agent-label:hover {
+  border-color: var(--ink-3);
+}
+.agent-label.selected {
+  background: var(--ink);
+  border-color: var(--ink);
+  color: var(--paper);
+}
+.label-color {
+  width: 8px;
+  height: 8px;
+  border-radius: 3px;
+  flex: none;
+}
+.label-sleep {
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--ink-3);
+}
+.agent-label.selected .label-sleep {
+  color: inherit;
+  opacity: 0.7;
+}
+.label-name {
+  max-width: 126px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.label-busy {
+  display: inline-flex;
+  align-items: flex-end;
+  gap: 2px;
+  height: 10px;
+}
+.label-busy i {
+  width: 2px;
+  height: 100%;
+  border-radius: 1px;
+  background: var(--ok);
+  transform-origin: bottom;
+  animation: bars 1s ease-in-out infinite;
+}
+.label-busy i:nth-child(2) {
+  animation-delay: 0.18s;
+}
+.label-busy i:nth-child(3) {
+  animation-delay: 0.36s;
+}
+@keyframes bars {
+  0%,
+  100% {
+    transform: scaleY(0.35);
+  }
+  50% {
+    transform: scaleY(1);
+  }
+}
 
-.hotspot-label { width: 26px; padding: 0; justify-content: center; gap: 0; color: var(--ink-2); }
-.hotspot-label svg { width: 14px; height: 14px; }
+.hotspot-label {
+  width: 26px;
+  padding: 0;
+  justify-content: center;
+  gap: 0;
+  color: var(--ink-2);
+}
+.hotspot-label svg {
+  width: 14px;
+  height: 14px;
+}
 .hotspot-label span {
   position: absolute;
   left: 50%;
@@ -174,19 +446,49 @@ body.expanded-mode .office-utilities { padding-bottom: max(6px, env(safe-area-in
   opacity: 0;
   transform: translate(-50%, 4px);
   pointer-events: none;
-  transition: opacity .18s var(--ease), transform .18s var(--ease);
+  transition:
+    opacity 0.18s var(--ease),
+    transform 0.18s var(--ease);
 }
-.hotspot-label:hover, .hotspot-label:focus-visible { background: var(--accent-soft); border-color: transparent; color: var(--accent-ink); }
-.hotspot-label:hover span, .hotspot-label:focus-visible span { opacity: 1; transform: translate(-50%, 0); }
+.hotspot-label:hover,
+.hotspot-label:focus-visible {
+  background: var(--accent-soft);
+  border-color: transparent;
+  color: var(--accent-ink);
+}
+.hotspot-label:hover span,
+.hotspot-label:focus-visible span {
+  opacity: 1;
+  transform: translate(-50%, 0);
+}
 
 /* Desk map */
 
-.desks-dialog { width: min(560px, calc(100vw - 28px)); }
-.desk-map-caption { display: flex; justify-content: space-between; margin-bottom: 8px; font-size: 12px; color: var(--ink-3); }
-.desk-map { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)) 4px repeat(2, minmax(0, 1fr)); gap: 8px; padding: 12px; border-radius: var(--r-3); background: var(--surface-2); }
+.desks-dialog {
+  width: min(560px, calc(100vw - 28px));
+}
+.desk-map-caption {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 8px;
+  font-size: 12px;
+  color: var(--ink-3);
+}
+.desk-map {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr)) 4px repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  padding: 12px;
+  border-radius: var(--r-3);
+  background: var(--surface-2);
+}
 /* Gaps between the four pods, matching the room. */
-.desk-tile:nth-child(4n+3) { grid-column-start: 4; }
-.desk-tile:nth-child(n+9):nth-child(-n+12) { margin-top: 10px; }
+.desk-tile:nth-child(4n + 3) {
+  grid-column-start: 4;
+}
+.desk-tile:nth-child(n + 9):nth-child(-n + 12) {
+  margin-top: 10px;
+}
 .desk-tile {
   display: grid;
   gap: 2px;
@@ -196,76 +498,329 @@ body.expanded-mode .office-utilities { padding-bottom: max(6px, env(safe-area-in
   border-radius: var(--r-2);
   background: var(--raised);
   text-align: left;
-  transition: border-color .18s var(--ease), box-shadow .18s var(--ease);
+  transition:
+    border-color 0.18s var(--ease),
+    box-shadow 0.18s var(--ease);
 }
-.desk-tile:hover { border-color: var(--ink-4); }
-.desk-number { font-family: var(--mono); font-size: 11.5px; color: var(--ink-3); }
-.desk-owner { font-size: 13px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.desk-tile.available { border-style: dashed; background: transparent; }
-.desk-tile.available .desk-owner { font-weight: 400; color: var(--ink-3); }
-.desk-tile.selected { border-style: solid; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
-.desk-selection { margin-top: 16px; }
-.desk-selection strong { font-size: 15px; font-weight: 650; }
-.desk-selection p { margin-top: 2px; font-size: 13px; color: var(--ink-2); }
+.desk-tile:hover {
+  border-color: var(--ink-4);
+}
+.desk-number {
+  font-family: var(--mono);
+  font-size: 11.5px;
+  color: var(--ink-3);
+}
+.desk-owner {
+  font-size: 13px;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.desk-tile.available {
+  border-style: dashed;
+  background: transparent;
+}
+.desk-tile.available .desk-owner {
+  font-weight: 400;
+  color: var(--ink-3);
+}
+.desk-tile.selected {
+  border-style: solid;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+.desk-selection {
+  margin-top: 16px;
+}
+.desk-selection strong {
+  font-size: 15px;
+  font-weight: 650;
+}
+.desk-selection p {
+  margin-top: 2px;
+  font-size: 13px;
+  color: var(--ink-2);
+}
 
 @media (max-width: 860px) {
-  .space { position: relative; inset: auto; height: clamp(480px, 76dvh, 680px); min-height: 480px; }
-  .scene-top { left: 10px; right: 10px; }
-  .scene-top { top: 10px; }
-  .rituals button span, .scene-tools .tool-button span { display: none; }
-  .rituals #focus-btn span { display: inline; }
-  .segmented button { padding: 0 8px; }
-  .scene-top button { min-height: 32px; }
-  .camera-dock { padding: 9px 10px 10px; }
-  .camera-tools { gap: 5px; }
-  .camera-orbit { flex: none; }
-  .camera-options { margin-left: auto; margin-right: 0; }
-  .camera-options .tool-button { padding: 0 7px; gap: 5px; }
-  .zoom-controls { flex-basis: 100%; max-width: none; }
-  .camera-caption { font-size: 11px; }
-  .office-utilities { padding: 5px 10px; gap: 3px; }
-  .office-utilities .scene-hint { font-size: 10.5px; }
-  .office-utilities .rituals button { padding: 0 6px; }
-  .office-moment { left: 10px; bottom: 14px; }
-  .agent-label { height: 22px; padding: 0 7px 0 6px; gap: 5px; border-radius: 11px; font-size: 11px; }
-  .label-name { max-width: 104px; }
-  .hotspot-label { width: 22px; padding: 0; }
-  .desk-tile { padding: 6px 7px; }
+  .space {
+    position: relative;
+    inset: auto;
+    height: clamp(480px, 76dvh, 680px);
+    min-height: 480px;
+  }
+  .scene-top {
+    left: 10px;
+    right: 10px;
+  }
+  .scene-top {
+    top: 10px;
+  }
+  .rituals button span,
+  .scene-tools .tool-button span {
+    display: none;
+  }
+  .rituals #focus-btn span {
+    display: inline;
+  }
+  .segmented button {
+    padding: 0 8px;
+  }
+  .scene-top button {
+    min-height: 32px;
+  }
+  .camera-dock {
+    padding: 9px 10px 10px;
+  }
+  .camera-tools {
+    gap: 5px;
+  }
+  .camera-orbit {
+    flex: none;
+  }
+  .camera-options {
+    margin-left: auto;
+    margin-right: 0;
+  }
+  .camera-options .tool-button {
+    padding: 0 7px;
+    gap: 5px;
+  }
+  .zoom-controls {
+    flex-basis: 100%;
+    max-width: none;
+  }
+  .camera-caption {
+    font-size: 11px;
+  }
+  .office-utilities {
+    padding: 5px 10px;
+    gap: 3px;
+  }
+  .office-utilities .scene-hint {
+    font-size: 10.5px;
+  }
+  .office-utilities .rituals button {
+    padding: 0 6px;
+  }
+  .office-moment {
+    left: 10px;
+    bottom: 14px;
+  }
+  .agent-label {
+    height: 22px;
+    padding: 0 7px 0 6px;
+    gap: 5px;
+    border-radius: 11px;
+    font-size: 11px;
+  }
+  .label-name {
+    max-width: 104px;
+  }
+  .hotspot-label {
+    width: 22px;
+    padding: 0;
+  }
+  .desk-tile {
+    padding: 6px 7px;
+  }
 }
 
 @media (max-width: 360px) {
-  .scene-top { left: 8px; right: 8px; gap: 6px; }
-  .segmented button { padding: 0 4px; font-size: 12px; }
-  .scene-tools .tool-button { padding: 0 5px; gap: 3px; }
-  .scene-tools .tool-button b { font-size: 10.5px; }
-  .camera-options .tool-button { padding: 0 5px; gap: 3px; }
-  .camera-caption p { font-size: 10px; }
-  .office-utilities .scene-hint { display: none; }
-  .office-utilities { justify-content: center; }
+  .scene-top {
+    left: 8px;
+    right: 8px;
+    gap: 6px;
+  }
+  .segmented button {
+    padding: 0 4px;
+    font-size: 12px;
+  }
+  .scene-tools .tool-button {
+    padding: 0 5px;
+    gap: 3px;
+  }
+  .scene-tools .tool-button b {
+    font-size: 10.5px;
+  }
+  .camera-options .tool-button {
+    padding: 0 5px;
+    gap: 3px;
+  }
+  .camera-caption p {
+    font-size: 10px;
+  }
+  .office-utilities .scene-hint {
+    display: none;
+  }
+  .office-utilities {
+    justify-content: center;
+  }
 }
 
 /* The workspace embeds only the office scene; the complete office remains available. */
-body.embedded-office{height:100dvh;min-height:0;overflow:hidden;padding:0}
-.embedded-office .topbar,.embedded-office .context,.embedded-office .office-utilities,.embedded-office .scene-tools,.embedded-office .camera-caption,.embedded-office .camera-orbit,.embedded-office .camera-options{display:none!important}
-.embedded-office .app{display:block!important;height:100dvh!important;min-height:0!important;padding:0!important}
-.embedded-office .stage{height:100dvh!important;min-height:0!important;width:100%!important;margin:0!important}
-.embedded-office .space{position:absolute;inset:0;grid-template-rows:minmax(0,1fr) auto!important}
-.embedded-office .camera-dock{padding:10px}
-.embedded-office .zoom-controls{max-width:none;min-width:0}
-.embedded-office .scene-top{left:10px;right:10px;top:10px}
-.embedded-office .segmented{width:100%;justify-content:space-between}
-.embedded-office .segmented button{font-size:10px;padding:0 8px}
+body.embedded-office {
+  height: 100dvh;
+  min-height: 0;
+  overflow: hidden;
+  padding: 0;
+}
+.embedded-office .topbar,
+.embedded-office .context,
+.embedded-office .office-utilities,
+.embedded-office .scene-tools,
+.embedded-office .camera-caption,
+.embedded-office .camera-orbit,
+.embedded-office .camera-options {
+  display: none !important;
+}
+.embedded-office .app {
+  display: block !important;
+  height: 100dvh !important;
+  min-height: 0 !important;
+  padding: 0 !important;
+}
+.embedded-office .stage {
+  height: 100dvh !important;
+  min-height: 0 !important;
+  width: 100% !important;
+  margin: 0 !important;
+}
+.embedded-office .space {
+  position: absolute;
+  inset: 0;
+  grid-template-rows: minmax(0, 1fr) auto !important;
+}
+.embedded-office .camera-dock {
+  padding: 10px;
+}
+.embedded-office .zoom-controls {
+  max-width: none;
+  min-width: 0;
+}
+.embedded-office .scene-top {
+  left: 10px;
+  right: 10px;
+  top: 10px;
+}
+.embedded-office .segmented {
+  width: 100%;
+  justify-content: space-between;
+}
+.embedded-office .segmented button {
+  font-size: 10px;
+  padding: 0 8px;
+}
 
 /* Keep the room large when it lives beside group chat. Zoom floats over its corner. */
-.embedded-office .space{grid-template-rows:minmax(0,1fr)!important}
-.embedded-office .camera-dock{position:absolute;right:10px;bottom:10px;padding:3px;background:var(--raised);border:1px solid var(--line);border-radius:9px}
-.embedded-office .camera-tools{gap:0}
-.embedded-office .zoom-controls{flex:none;gap:1px}
-.embedded-office #zoom-slider,.embedded-office #zoom-value{display:none}
-.embedded-office .camera-dock .icon-button{height:28px;width:28px}
-.embedded-office #reset-view{height:28px;border:0;background:transparent;margin:0;padding:0 6px}
-.embedded-office #reset-view span{display:none}
+.embedded-office .space {
+  grid-template-rows: minmax(0, 1fr) !important;
+}
+.embedded-office .camera-dock {
+  position: absolute;
+  right: 10px;
+  bottom: 10px;
+  padding: 3px;
+  background: var(--raised);
+  border: 1px solid var(--line);
+  border-radius: 9px;
+}
+.embedded-office .camera-tools {
+  gap: 0;
+}
+.embedded-office .zoom-controls {
+  flex: none;
+  gap: 1px;
+}
+.embedded-office #zoom-slider,
+.embedded-office #zoom-value {
+  display: none;
+}
+.embedded-office .camera-dock .icon-button {
+  height: 28px;
+  width: 28px;
+}
+.embedded-office #reset-view {
+  height: 28px;
+  border: 0;
+  background: transparent;
+  margin: 0;
+  padding: 0 6px;
+}
+.embedded-office #reset-view span {
+  display: none;
+}
 
-.embedded-office .space{height:100%!important;min-height:0!important}
+.embedded-office .space {
+  height: 100% !important;
+  min-height: 0 !important;
+}
 
-.embedded-office .scene-top{top:7px;left:8px;right:8px}.embedded-office .segmented{padding:2px;width:auto;gap:1px;border-radius:8px}.embedded-office .segmented button{height:24px;padding:0 10px;font-size:10px}
+.embedded-office .scene-top {
+  top: 7px;
+  left: 8px;
+  right: 8px;
+}
+.embedded-office .segmented {
+  padding: 2px;
+  width: auto;
+  gap: 1px;
+  border-radius: 8px;
+}
+.embedded-office .segmented button {
+  height: 24px;
+  padding: 0 10px;
+  font-size: 10px;
+}
+
+/* Short stages (phones, narrow columns): the view bar folds into the corner dock so the
+   room and its name labels get the full height. embed.js toggles .compact-stage. */
+.embedded-office .view-cycle {
+  display: none;
+}
+.embedded-office.compact-stage .scene-top {
+  display: none;
+}
+.embedded-office.compact-stage .view-cycle {
+  display: inline-flex;
+  height: 28px;
+  gap: 4px;
+  margin: 0;
+  padding: 0 7px;
+  border: 0;
+  background: transparent;
+  font-size: 11px;
+}
+.embedded-office.compact-stage .view-cycle svg {
+  width: 13px;
+  height: 13px;
+}
+.embedded-office.compact-stage .office-moment {
+  left: 8px;
+  right: 8px;
+  bottom: 46px;
+}
+
+/* Tiny stages: names collapse to colour dots so a whole team still fits. The selected
+   person keeps their name, and every label keeps its accessible name for screen readers. */
+.embedded-office.tiny-stage .agent-label:not(.hotspot-label):not(.selected) {
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  gap: 0;
+  justify-content: center;
+  border-radius: 50%;
+}
+.embedded-office.tiny-stage .agent-label:not(.hotspot-label):not(.selected) > span:not(.label-color) {
+  display: none;
+}
+.embedded-office.tiny-stage .agent-label:not(.hotspot-label):not(.selected) .label-color {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+}
+.embedded-office.tiny-stage .hotspot-label {
+  width: 20px;
+  height: 20px;
+}
