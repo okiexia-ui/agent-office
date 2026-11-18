@@ -12,15 +12,26 @@ Hermes ── 私有服务访问请求头 ──┘
 
 `office.tommyxia.org` 已申请绑定，但截至本次源码归档，DNS 验证尚未完成。Hermes 配置继续使用上面的有效托管地址。
 
-## 构建
+## 构建与发布
 
 ```bash
-npm run check
-npm test
-npm run build
+npm install          # 构建与格式化工具：esbuild、Prettier
+npm run check        # 语法与格式
+npm test             # 61 项测试，含一次完整的正式构建
+npm run package      # 构建并生成 release/agent-office-<版本>-sites.tar.gz 与 SHA256SUMS.txt
 ```
 
-构建脚本把 `public/` 中的文本资源嵌入 `dist/server/index.js`，同时复制 `.openai/hosting.json` 到 `dist/.openai/hosting.json`。当前构建不支持直接嵌入二进制资源。
+`npm run build` 做这些事：
+
+- 用 esbuild 打包三个页面的脚本：工作台 `index.html`、嵌入场景 `embed.html`、完整办公室 `office.html`。公共代码拆成共享块，3D 场景（含按需裁剪的 Three.js）是按需加载的独立块；全部压缩。
+- 脚本与样式输出到 `/assets/`，文件名带内容指纹，由 Worker 以 `Cache-Control: public, max-age=31536000, immutable` 返回。页面、图标、清单等其他文件以 `no-cache` 加 ETag 返回，未变化时为 304。
+- 改写页面引用、去掉开发用的 importmap、为首屏依赖加 `modulepreload`，并在应用页面中注册 Service Worker。
+- 由 `scripts/service-worker.js` 生成 `/sw.js`，写入构建版本和预缓存列表。
+- 把 `worker/` 打包进 `dist/server/index.js`，并嵌入全部静态文件；PNG 图标以 base64 嵌入，首次请求时解码。复制 `.openai/hosting.json` 到 `dist/.openai/hosting.json`。
+
+`npm run preview` 在 <http://127.0.0.1:3090/> 运行这个构建产物，行为与线上一致（除站点登录外）。`npm run dev` 则直接提供未打包的源文件，不注册 Service Worker，便于调试。
+
+发布：在 Codex 中通过 Sites 发布到 `.openai/hosting.json` 中的项目，源码使用本仓库 `main`，或直接使用 `npm run package` 生成的部署包（包含 `dist/.openai/hosting.json` 与 `dist/server/index.js`）。发布不需要修改 R2 绑定或密钥。
 
 ## Sites 所需配置
 
@@ -44,7 +55,8 @@ Worker 信任 Sites 网关完成访问认证，`/api/hermes/credentials` 还依�
 | 路由 | 功能 |
 | --- | --- |
 | `GET /api/health` | 服务与存储配置状态 |
-| `GET /api/state` | 读取共享办公室状态 |
+| `GET /api/sync?scope=group\|<agentId>` | 工作台的唯一轮询：办公室状态、成果目录、执行记录与当前会话；带 `If-None-Match` 且无变化时返回 304，只读对象元信息 |
+| `GET /api/state` | 读取共享办公室状态（完整办公室使用，同样支持 304） |
 | `PUT /api/state` | 按 revision 更新状态，保留服务器中的聊天记录 |
 | `GET /api/chat?agentId=...` | 读取该成员的最近聊天记录 |
 | `POST /api/chat` | 保存用户留言；携带 `agentId`、`content`、`requestId` |
@@ -59,12 +71,13 @@ Worker 信任 Sites 网关完成访问认证，`/api/hermes/credentials` 还依�
 
 ## 数据与容量
 
-- R2 对象：`office/state-v2.json`，包含成员（含 `seatId`）、任务、动态、聊天记录和版本信息。旧数据首次读取时自动分配工位，保留原有成员和任务。
+- R2 对象：`office/state-v2.json`，包含成员（含 `seatId`）、任务、动态、聊天记录、成果目录、执行记录和版本信息。旧数据首次读取时自动分配工位，保留原有成员和任务。
+- 成果正文：每份一个对象 `office/visuals/<visual_id>.json`。先写正文、再条件提交目录；重复请求或被保留策略移出的成果会删除对应正文。2.4 之前内联保存在主对象中的成果，会在下次有 Agent 发布成果时自动迁出。
 - 上限：16 位成员及对应工位、200 个任务、40 条最近动态。每位成员保留最近最多 100 条聊天消息（约 50 轮）；清理时成对移除已回复消息，保留未回复留言。每位成员最多 10 条待回复留言。
 - 聊天记录仍使用同一个 R2 对象的 ETag 条件更新。`/api/state` 不返回聊天正文，普通状态 PUT 不可伪造聊天回复。
 - 公共频道增加 `channelMessages`、`channelSequence`、`channelReads`，旧状态自动补充为空。保留最新 200 条消息，序号持续递增；读取响应提示历史是否被裁剪。普通状态 PUT 保留频道记录和已读位置。
 - Visual 保留最新 40 份成果，单份正文最多 32,000 字符；执行记录保留最新 200 条，使用单调递增序号。写入通过 MCP，浏览器状态保存不会覆盖这些记录。
-- 浏览器每 4 秒同步；5 分钟无心跳则显示离线。
+- 工作台每 4 秒一个 `/api/sync` 请求，嵌入的办公室不单独请求；5 分钟无心跳则显示离线。
 - 浏览器写入检查 revision；服务写入使用 R2 ETag 条件更新，避免覆盖并发变化。
 - `?demo=1` 使用浏览器本地数据，不写入 R2。
 
@@ -72,7 +85,14 @@ GitHub 中的代码备份不包括 R2 中的运行数据。迁移或备份办公
 
 ## 已有检查
 
-`npm test` 包含 46 项测试，覆盖 MCP 握手、工具发现、成员登记、任务流程、消息收发、并发去重、输入验证、工位与相机布局、公共频道协作、Visual 归属、执行记录、HTML 隔离和保留策略。测试使用内存存储替身，不替代部署后的身份认证与实际 R2 验证。
+`npm test` 包含 61 项测试，覆盖 MCP 握手、工具发现、成员登记、任务流程、消息收发、并发去重、输入验证、工位与相机布局、公共频道协作、Visual 归属与独立存储、旧数据迁移、同步与 304、执行记录、HTML 隔离、保留策略、名称标签排布，以及正式构建的页面引用、缓存头、应用清单、Service Worker 与体积预算。测试使用内存存储替身，不替代部署后的身份认证与实际 R2 验证。
+
+## 发布 2.4.0 后
+
+- MCP 工具仍是 17 个，参数与返回值不变；已连接的 Agent 不需要重新配置。
+- 第一次打开新版本时，浏览器会注册 Service Worker；之后发布的版本会在下次打开时自动生效。
+- 已有成果会在下一次 Agent 发布成果时自动迁出到独立对象，期间读取不受影响。
+- 安装成应用的方法见 [APP.md](APP.md)。
 
 ## 发布 2.3.1 后
 

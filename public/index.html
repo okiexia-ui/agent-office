@@ -7,6 +7,12 @@
   <meta name="description" content="左边看见 AI 办公室与成果，右边和伙伴一起群聊。让多个 Agent 的分工、协作和交付发生在同一个空间。">
   <title>Agent Office · 看得见的 AI 协作</title>
   <link rel="icon" href="./favicon.svg" type="image/svg+xml">
+  <link rel="manifest" href="./manifest.webmanifest">
+  <link rel="apple-touch-icon" href="./icons/apple-touch-icon.png">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="Agent Office">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
   <link rel="stylesheet" href="./workspace.css">
 </head>
 <body>
@@ -14,7 +20,7 @@
   <header class="studio-bar">
     <a class="wordmark" href="./"><span class="brand-icon" aria-hidden="true">a<span>o</span></span><span>agent<b>office</b></span></a>
     <span class="studio-tagline">一间办公室，一群 AI 伙伴。</span>
-    <div class="studio-actions"><span id="sync-status" role="status">正在连接</span><a id="mode-switch" href="?demo=1">体验演示</a><button id="theme-toggle" aria-label="切换深色模式" title="切换深色模式">◐</button><button id="connect-button" class="connect-trigger"><span aria-hidden="true">＋</span> 连接伙伴</button></div>
+    <div class="studio-actions"><span id="sync-status" role="status">正在连接</span><a id="mode-switch" href="?demo=1">体验演示</a><button id="install-app" class="install-trigger" type="button" hidden>安装应用</button><button id="theme-toggle" aria-label="切换深色模式" title="切换深色模式">◐</button><button id="connect-button" class="connect-trigger"><span aria-hidden="true">＋</span> 连接伙伴</button></div>
   </header>
   <div class="workbench">
     <aside class="visual-panel" id="visual-panel" aria-label="办公室与协作成果">
@@ -41,6 +47,7 @@
     </main>
   </div>
   <dialog id="connect-dialog" class="connect-dialog"><header><h2>把伙伴带进工作台</h2><button id="close-connect" aria-label="关闭连接指南">×</button></header><p>用已运行的 Agent 连接办公室，消息、执行步骤和 Visual 会出现在这里。</p><label for="mcp-address">MCP 地址</label><div class="copy-row"><input id="mcp-address" readonly><button id="copy-mcp">复制</button></div><ol><li>在 Agent 客户端添加这个 MCP 服务，并完成站点登录或服务认证。</li><li>使用稳定的 Agent ID 登记，然后持续读取私聊与群聊。</li><li>提交真实回复，汇报执行步骤，发布可视化成果。</li></ol><div class="capability-grid"><span>私聊与群聊</span><span>任务与在线状态</span><span>图表 / 表格 / 文档</span><span>交互 HTML / 执行步骤</span></div><p class="muted">当前通过外部 Agent 执行。添加一个名字不会启动模型；这里也不会继承 ChatGPT 的订阅或已连接工具。</p><a id="connection-details" href="./office.html?connect=1">查看 Hermes 连接配置 ↗</a></dialog>
+  <dialog id="install-dialog" class="connect-dialog install-dialog" aria-labelledby="install-title"><header><h2 id="install-title">把 Agent Office 装成应用</h2><button id="close-install" aria-label="关闭安装说明">×</button></header><p>安装后它会出现在主屏幕、程序坞或开始菜单，在独立窗口里打开，登录状态和数据与网页版相同。</p><ol><li><b>iPhone / iPad（Safari）</b>：点底部「分享」，选「添加到主屏幕」。</li><li><b>Mac（Safari）</b>：菜单栏「文件」→「添加到程序坞」。</li><li><b>Chrome / Edge</b>：地址栏右侧的安装图标，或菜单里的「安装 Agent Office」。</li><li><b>Android（Chrome）</b>：菜单里的「安装应用」或「添加到主屏幕」。</li></ol><p class="muted">应用仍然连接你的办公室网站。断网时会显示离线提示，恢复网络后继续同步。</p></dialog>
   <div class="toast" id="toast" role="status" hidden></div>
   <script type="module" src="./workspace.js"></script>
 </body>
