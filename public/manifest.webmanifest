@@ -1,0 +1,38 @@
+{
+  "id": "./",
+  "name": "Agent Office",
+  "short_name": "Agent Office",
+  "description": "一间看得见的 AI 办公室：左边看伙伴和成果，右边一起群聊。",
+  "lang": "zh-CN",
+  "dir": "ltr",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "display_override": ["window-controls-overlay", "standalone"],
+  "orientation": "any",
+  "background_color": "#f5f4ef",
+  "theme_color": "#f5f4ef",
+  "categories": ["productivity", "business"],
+  "icons": [
+    {"src": "./icons/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any"},
+    {"src": "./icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any"},
+    {"src": "./icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any"},
+    {"src": "./icons/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable"}
+  ],
+  "shortcuts": [
+    {
+      "name": "完整办公室",
+      "short_name": "办公室",
+      "description": "任务、成员、工位和连接设置",
+      "url": "./office.html",
+      "icons": [{"src": "./icons/icon-192.png", "sizes": "192x192", "type": "image/png"}]
+    },
+    {
+      "name": "体验演示",
+      "short_name": "演示",
+      "description": "本地示例数据，不调用真实模型",
+      "url": "./?demo=1",
+      "icons": [{"src": "./icons/icon-192.png", "sizes": "192x192", "type": "image/png"}]
+    }
+  ]
+}
