@@ -4,65 +4,73 @@
 // such as visual content, live under objects/.
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import lockfile from 'proper-lockfile';
 
 const STATE_KEY = 'office/state-v2.json';
+
+function missingFile(error) {
+  if (error.code !== 'ENOENT') throw error;
+  return null;
+}
+
+// Each successful write replaces the inode. These tags survive a server restart
+// and can be checked with stat alone, including from another preview process.
+function metadata(key, stat) {
+  return {key, etag: `local-${stat.ino}-${stat.ctimeNs}-${stat.mtimeNs}-${stat.size}`, size: Number(stat.size)};
+}
 
 export async function localBucket(dir) {
   await fs.mkdir(path.join(dir, 'objects'), {recursive: true});
   const fileFor = key =>
     key === STATE_KEY ? path.join(dir, 'state.json') : path.join(dir, 'objects', encodeURIComponent(key));
-  const objects = new Map();
-  let generation = 0,
-    writes = Promise.resolve();
-
-  async function load(key) {
-    if (objects.has(key)) return objects.get(key);
-    const body = await fs.readFile(fileFor(key), 'utf8').catch(error => {
-      if (error.code !== 'ENOENT') throw error;
-      return null;
-    });
-    if (!objects.has(key)) objects.set(key, body === null ? null : {body, etag: `local-${++generation}`});
-    return objects.get(key);
+  async function head(key) {
+    const stat = await fs.stat(fileFor(key), {bigint: true}).catch(missingFile);
+    return stat && metadata(key, stat);
   }
-  function persist(key, body) {
-    writes = writes
-      .catch(() => {})
-      .then(async () => {
-        const file = fileFor(key);
-        if (body === null) return fs.rm(file, {force: true});
-        await fs.writeFile(file + '.tmp', body);
-        await fs.rename(file + '.tmp', file);
-      });
-    return writes;
+  async function writeLocked(action) {
+    const release = await lockfile.lock(dir, {
+      lockfilePath: path.join(dir, '.write.lock'),
+      retries: {retries: 50, minTimeout: 8, maxTimeout: 250, randomize: true}
+    });
+    try {
+      return await action();
+    } finally {
+      await release();
+    }
   }
 
   return {
-    async head(key) {
-      const object = await load(key);
-      return object ? {key, etag: object.etag, size: object.body.length} : null;
-    },
+    head,
     async get(key) {
-      const object = await load(key);
-      if (!object) return null;
-      const {body, etag} = object;
-      return {key, etag, size: body.length, json: async () => JSON.parse(body), text: async () => body};
+      const file = await fs.open(fileFor(key), 'r').catch(missingFile);
+      if (!file) return null;
+      try {
+        // Reading both from the same handle pairs the body with its own version.
+        const info = metadata(key, await file.stat({bigint: true}));
+        const body = await file.readFile('utf8');
+        return {...info, json: async () => JSON.parse(body), text: async () => body};
+      } finally {
+        await file.close();
+      }
     },
     async put(key, body, options = {}) {
-      const condition = options.onlyIf,
-        current = await load(key);
-      // No await between the check and the write, so concurrent puts cannot both win.
-      if (condition?.etagMatches && condition.etagMatches !== current?.etag) return null;
-      if (condition?.etagDoesNotMatch === '*' && current) return null;
-      const object = {body: String(body), etag: `local-${++generation}`};
-      objects.set(key, object);
-      await persist(key, object.body);
-      return {key, etag: object.etag};
+      return writeLocked(async () => {
+        const condition = options.onlyIf;
+        if (condition) {
+          const current = await head(key);
+          if (condition.etagMatches && condition.etagMatches !== current?.etag) return null;
+          if (condition.etagDoesNotMatch === '*' && current) return null;
+        }
+        const file = fileFor(key);
+        await fs.writeFile(file + '.tmp', String(body));
+        await fs.rename(file + '.tmp', file);
+        return head(key);
+      });
     },
     async delete(keys) {
-      for (const key of [].concat(keys)) {
-        objects.set(key, null);
-        await persist(key, null);
-      }
+      await writeLocked(async () => {
+        for (const key of [].concat(keys)) await fs.rm(fileFor(key), {force: true});
+      });
     }
   };
 }

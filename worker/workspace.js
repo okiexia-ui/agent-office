@@ -181,11 +181,12 @@ export async function callWorkspaceTool(name, a, ctx) {
   const sameRequest = previous => previous.requestShape === shape || previous.requestShape === raw;
   const key = name === 'office_publish_visual' ? 'visuals' : 'steps';
   // A visual's content lives in its own object; the state only lists it.
+  const content = payload.content;
   let bodyId = null,
     trimmed = [];
   if (key === 'visuals') {
     bodyId = crypto.randomUUID();
-    await writeVisualBody(env, bodyId, payload.content);
+    await writeVisualBody(env, bodyId, content);
     delete payload.content;
   }
   let result;
@@ -195,10 +196,34 @@ export async function callWorkspaceTool(name, a, ctx) {
       return record(s);
     });
   } catch (error) {
-    if (bodyId) await removeVisualBodies(env, [bodyId]);
-    throw error;
+    if (!bodyId) throw error;
+    if (error instanceof Problem) {
+      // Validation and exhausted conditional writes are definite rejections.
+      await removeVisualBodies(env, [bodyId]);
+      throw error;
+    }
+    // A storage error may arrive after the index was committed. Keep the body
+    // when the outcome is unknown so an identical retry can still deliver it.
+    const latest = await snapshot(env).catch(() => null);
+    const published = latest?.state.visuals?.find(visual => visual.id === bodyId);
+    if (!published) throw error;
+    result = {result: published, state: latest.state};
   }
-  if (bodyId && result.result.id !== bodyId) await removeVisualBodies(env, [bodyId]);
+  if (bodyId && result.result.id !== bodyId) {
+    try {
+      // An exact retry can also repair a retained index from an older release.
+      const existing = result.result;
+      if (
+        existing.content === undefined &&
+        (await writeVisualBody(env, existing.id, content, {etagDoesNotMatch: '*'}))
+      ) {
+        const {state} = await snapshot(env);
+        if (!state.visuals?.some(visual => visual.id === existing.id)) await removeVisualBodies(env, [existing.id]);
+      }
+    } finally {
+      await removeVisualBodies(env, [bodyId]);
+    }
+  }
   if (key === 'visuals') {
     await removeVisualBodies(
       env,
@@ -260,8 +285,9 @@ async function fingerprint(text) {
   const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text));
   return 'sha256:' + [...new Uint8Array(digest)].map(byte => byte.toString(16).padStart(2, '0')).join('');
 }
-async function writeVisualBody(env, visualId, content) {
-  await env.BUCKET.put(visualKey(visualId), JSON.stringify({id: visualId, content}), {
+async function writeVisualBody(env, visualId, content, onlyIf) {
+  return env.BUCKET.put(visualKey(visualId), JSON.stringify({id: visualId, content}), {
+    ...(onlyIf ? {onlyIf} : {}),
     httpMetadata: {contentType: 'application/json'}
   });
 }
