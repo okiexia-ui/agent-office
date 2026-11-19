@@ -121,13 +121,51 @@ function toggleVisual(show) {
   frameVisibility();
   if (compactScreen.matches) (show ? $('#close-visual') : $('#visual-toggle')).focus({preventScroll: true});
 }
+// First-run starting points for the local edition: each fills in the Agent studio, so the
+// only remaining choice is a model.
+const TEMPLATES = {
+  editor: {
+    name: '产品编辑',
+    role: '整理产品文档、发布说明和交付清单',
+    instructions:
+      '把收到的材料整理成结构清楚的文档或表格。先给结论，再列要点；数字、名称和日期保持原样，不确定的内容标注「待确认」。需要交付时，按要求发布成共享文档或共享表格。'
+  },
+  reviewer: {
+    name: '审校',
+    role: '检查文稿的事实、表述和格式',
+    instructions:
+      '逐条指出问题并给出修改建议，按「问题 / 位置 / 建议」整理。保持作者原意；无法核实的事实单独列出，不要猜测。最后给一句总体评价。'
+  },
+  researcher: {
+    name: '资料研究',
+    role: '归纳资料并给出有依据的结论',
+    instructions:
+      '先确认问题范围，再分点归纳。区分事实、推断和建议，只依据提供的材料或可以核实的信息；资料不足时直接说明还缺什么。'
+  }
+};
+const studioMode = () => localConfig?.studio === true;
+// No members yet: the local edition invites you to create one; a remote office waits for one to connect.
+function onboarding() {
+  if (studioMode())
+    return `<div class="empty-chat onboarding"><span class="empty-symbol" aria-hidden="true">✳</span><h2>先请来第一位成员</h2><p>给它名字、职责和工作方式，再选一个模型：本机 Pi，或 DeepSeek、OpenAI 等 API。之后在群聊里点名它，或私聊交代工作。</p><div class="suggestions">${Object.entries(
+      TEMPLATES
+    )
+      .map(
+        ([key, t]) =>
+          `<button data-template="${key}"><span class="template-name">${esc(t.name)}<small>${esc(t.role)}</small></span><span>创建 ↗</span></button>`
+      )
+      .join('')}</div><button class="onboarding-blank" data-template="">从空白开始创建</button></div>`;
+  return `<div class="empty-chat onboarding"><span class="empty-symbol" aria-hidden="true">✳</span><h2>还没有伙伴加入</h2><p>让已经运行的 Agent 通过 MCP 连接这个办公室。它登记后会坐进左边的办公室，消息、任务和成果都在这里。</p><div class="suggestions"><button data-connect>查看连接方式 <span>↗</span></button></div></div>`;
+}
 function renderOfficeContext() {
   const online = state.agents.filter(isOnline).length;
   $('#office-presence').textContent = demo
     ? `${state.agents.length} 位演示伙伴`
-    : hasConnected
-      ? `${online} / ${state.agents.length} 在线`
-      : '正在同步';
+    : !hasConnected
+      ? '正在同步'
+      : state.agents.length
+        ? `${online} / ${state.agents.length} 在线`
+        : '还没有成员';
   const active = state.tasks.filter(t => t.status === 'active');
   $('#office-caption').textContent =
     current === 'group'
@@ -145,9 +183,13 @@ function renderOfficeContext() {
             })
             .join('')
       : '<span>' +
-          (!online && !demo
-            ? '等待伙伴连接，收到任务后会在这里同步。'
-            : '伙伴们现在没有执行中的任务，可以在群聊里讨论下一步。') +
+          (demo || online
+            ? '伙伴们现在没有执行中的任务，可以在群聊里讨论下一步。'
+            : !studioMode()
+              ? '等待伙伴连接，收到任务后会在这里同步。'
+              : state.agents.length
+                ? '成员都已停用或还没启动，可以在「创建 Agent」里启用。'
+                : '创建第一位成员后，它会坐进办公室，正在推进的任务也会显示在这里。') +
           '</span>'
   );
 }
@@ -163,7 +205,8 @@ function renderSidebar() {
         a =>
           `<button class="conversation-row ${current === a.id ? 'selected' : ''}" data-agent="${esc(a.id)}" title="${esc(a.role)}" ${current === a.id ? 'aria-current="true"' : ''}>${avatar(a)}<span><strong>${esc(a.name)}</strong><small><i class="online-dot ${isOnline(a) ? '' : 'away'}"></i>${esc(demo ? statusLabels[a.status] : status(a))}</small></span></button>`
       )
-      .join('') || '<p class="panel-caption">没有匹配的伙伴</p>'
+      .join('') ||
+      `<p class="panel-caption">${query ? '没有匹配的伙伴' : studioMode() ? '还没有成员 · 点右上角「创建 Agent」' : '还没有伙伴连接'}</p>`
   );
   $('#group-chat').classList.toggle('selected', current === 'group');
   $('#group-chat').setAttribute('aria-current', String(current === 'group'));
@@ -202,7 +245,13 @@ function renderHeader() {
     : group
       ? '群聊共享上下文 · 真实回复由运行中的 Agent 提交'
       : '独立私聊 · 主动发布的成果对全办公室可见';
-  $('#composer-input').placeholder = group ? '@伙伴分配工作，或和大家一起讨论…' : `和 ${a?.name || '伙伴'} 说点什么…`;
+  $('#composer-input').placeholder = !group
+    ? `和 ${a?.name || '伙伴'} 说点什么…`
+    : demo || state.agents.length
+      ? '@伙伴分配工作，或和大家一起讨论…'
+      : studioMode()
+        ? '先请来一位成员，再在这里分配工作…'
+        : '伙伴连接后，就可以在这里分配工作…';
   $('#visual-scope').textContent = group ? '全员交付的成果，在同一处查看' : `${a?.name || '伙伴'} 的成果与执行记录`;
 }
 function renderRecipients() {
@@ -226,12 +275,17 @@ function renderMessages() {
     current,
     list,
     linked.map(v => [v.id, v.messageId]),
-    state.agents.map(a => [a.id, a.name])
+    state.agents.map(a => [a.id, a.name]),
+    hasConnected
   ]);
   if (signature === messageSignature) return;
   const log = $('#message-log'),
     nearEnd = log.scrollHeight - log.scrollTop - log.clientHeight < 100 || !messageSignature;
   messageSignature = signature;
+  if (!list.length && !demo && hasConnected && !state.agents.length) {
+    log.innerHTML = onboarding();
+    return;
+  }
   if (!list.length) {
     log.innerHTML = `<div class="empty-chat"><span class="empty-symbol" aria-hidden="true">✳</span><h2>一个想法，<br>和伙伴一起做出来。</h2><p>左边是伙伴们的办公室，右边一起讨论。点名分工、互相回应，完成的图表与文档直接交付到协作区。</p><div class="suggestions"><button data-kind="chart" data-prompt="请整理当前任务，并把进度发布成图表。">把当前任务变成图表 <span>↗</span></button><button data-kind="document" data-prompt="请梳理这个项目的下一步，把行动计划文档发布到成果区。">一起想清楚下一步 <span>↗</span></button><button data-kind="html" data-prompt="请做一个能交互的 HTML 小工具，发布到 Visual。">把想法变成可交互的作品 <span>↗</span></button></div></div>`;
     return;
@@ -337,8 +391,11 @@ async function renderVisuals() {
   $('#visual-picker').hidden = !items.length;
   if (!selectedVisual) {
     visualSignature = '';
+    // Asking for a chart only makes sense once someone is there to make it.
     $('#visual-content').innerHTML =
-      '<div class="visual-empty"><span aria-hidden="true">◫</span><div><h3>讨论之后，留下可以使用的成果。</h3><p>图表、文档、表格与交互作品，会由伙伴直接交付到这里。</p></div><button id="try-visual">请伙伴做张图表 ↗</button></div>';
+      '<div class="visual-empty"><span aria-hidden="true">◫</span><div><h3>讨论之后，留下可以使用的成果。</h3><p>图表、文档、表格与交互作品，会由伙伴直接交付到这里。</p></div>' +
+      (demo || state.agents.length ? '<button id="try-visual">请伙伴做张图表 ↗</button>' : '') +
+      '</div>';
     return;
   }
   const id = selectedVisual,
@@ -893,6 +950,15 @@ $('#quote-cancel').onclick = () => {
   renderComposer();
 };
 $('#message-log').onclick = e => {
+  const template = e.target.closest('[data-template]');
+  if (template) {
+    openStudio(TEMPLATES[template.dataset.template]);
+    return;
+  }
+  if (e.target.closest('[data-connect]')) {
+    $('#connect-dialog').showModal();
+    return;
+  }
   const person = e.target.closest('[data-private]');
   if (person && state.agents.some(a => a.id === person.dataset.private)) {
     selectConversation(person.dataset.private);
@@ -952,28 +1018,32 @@ $('.visual-tabs').onkeydown = e => {
   selectTab(tabs[next]);
   $('#tab-' + tabs[next]).focus();
 };
+// The Agent studio (local edition only); `template` prefills a new member.
+async function openStudio(template) {
+  if (!studioMode()) return $('#connect-dialog').showModal();
+  try {
+    const {openAgentStudio} = await import('./agent-studio.js');
+    await openAgentStudio({
+      template,
+      onChanged: poll,
+      onAgent: async agent => {
+        await selectConversation(agent.id);
+        await poll();
+        $('#composer-input').focus();
+      },
+      onConnect: () => $('#connect-dialog').showModal()
+    });
+  } catch {
+    toast('暂时无法打开工作室，请刷新页面重试');
+  }
+}
 const connectButton = $('#connect-button');
 if (localConfig?.studio === true) {
   $('#connect-dialog > p').textContent = '其他 Agent 客户端可以通过本机 MCP 地址加入这个办公室。';
   $('#connect-dialog .muted').textContent =
     '通过工作室创建的 Agent 会在本机启动。外部伙伴的执行方式由各自的客户端配置。';
   connectButton.innerHTML = '<span aria-hidden="true">＋</span> 创建 Agent';
-  connectButton.onclick = async () => {
-    try {
-      const {openAgentStudio} = await import('./agent-studio.js');
-      await openAgentStudio({
-        onChanged: poll,
-        onAgent: async agent => {
-          await selectConversation(agent.id);
-          await poll();
-          $('#composer-input').focus();
-        },
-        onConnect: () => $('#connect-dialog').showModal()
-      });
-    } catch {
-      toast('暂时无法打开工作室，请刷新页面重试');
-    }
-  };
+  connectButton.onclick = () => openStudio();
   const entry = new URL(location.href);
   if (entry.searchParams.get('studio') === '1') {
     entry.searchParams.delete('studio');

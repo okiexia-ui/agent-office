@@ -34,7 +34,8 @@ function feedback(text = '', error = false) {
 // Closing the dialog hides the pending result. A later opening waits for a save
 // already in flight before reloading, so its pickers reflect the saved settings.
 let pending, session;
-export async function openAgentStudio({onAgent, onConnect, onChanged}) {
+// `template` ({name, role, instructions}) prefills a new Agent, e.g. from first-run onboarding.
+export async function openAgentStudio({onAgent, onConnect, onChanged, template}) {
   if (dialog.open) return;
   const token = (session = Symbol());
   const active = () => dialog.open && token === session;
@@ -227,7 +228,13 @@ export async function openAgentStudio({onAgent, onConnect, onChanged}) {
     chooseConnection();
     chooseAgent();
     controls.disabled = false;
-    field('agent-name').focus();
+    if (template) {
+      field('agent-name').value = template.name;
+      field('agent-role').value = template.role;
+      field('agent-instructions').value = template.instructions;
+      // With the role written, the next step is a model: create, or add a connection first.
+      (field('save-agent').disabled ? field('add-connection') : field('save-agent')).focus();
+    } else field('agent-name').focus();
   } catch (error) {
     if (active()) feedback('无法读取工作室配置。请重新打开工作室重试。', true);
     return;

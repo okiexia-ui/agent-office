@@ -2,6 +2,8 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import {createHash} from 'node:crypto';
+import {spawn} from 'node:child_process';
+import {parseEnv} from 'node:util';
 import lockfile from 'proper-lockfile';
 import {startOfficeServer} from './dev.mjs';
 import {preflightPi, generatePi} from './pi-process.mjs';
@@ -11,6 +13,41 @@ import {openAgentStudio} from './agent-studio.mjs';
 import {generateApi} from './studio-provider.mjs';
 
 const root = path.resolve(import.meta.dirname, '..');
+
+// The local edition needs Node.js 22.19 or newer; the optional Pi CLI requires it too.
+const [major, minor] = process.versions.node.split('.').map(Number);
+if (major < 22 || (major === 22 && minor < 19)) {
+  console.error(
+    `Agent Office 本地版需要 Node.js 22.19 或更新版本，当前是 ${process.versions.node}。\n` +
+      '请从 https://nodejs.org 安装长期支持版（LTS），或在终端运行 brew install node，然后重新启动。'
+  );
+  process.exit(1);
+}
+
+// --env-file=<path> loads settings such as OFFICE_PORT or OFFICE_MODEL_FILE (npm run local
+// passes .env.local). Variables already set in the environment take precedence.
+const envFile = process.argv.find(arg => arg.startsWith('--env-file='))?.slice('--env-file='.length);
+if (envFile) {
+  const text = await fs.readFile(path.resolve(root, envFile), 'utf8').catch(error => {
+    if (error.code === 'ENOENT') return '';
+    throw error;
+  });
+  for (const [name, value] of Object.entries(parseEnv(text))) if (!(name in process.env)) process.env[name] = value;
+}
+// --open shows the workspace in the default browser once it is ready.
+const openWhenReady = process.argv.includes('--open') && process.env.OFFICE_OPEN !== '0';
+function openBrowser(url) {
+  const [command, args] =
+    process.platform === 'darwin'
+      ? ['open', [url]]
+      : process.platform === 'win32'
+        ? ['cmd', ['/c', 'start', '', url]]
+        : ['xdg-open', [url]];
+  spawn(command, args, {stdio: 'ignore', detached: true})
+    .on('error', () => console.log('请在浏览器中打开 ' + url))
+    .unref();
+}
+
 const runtimeDir = path.join(root, '.office-local', 'pi');
 const stateDir = path.resolve(process.env.OFFICE_DATA_DIR || path.join(runtimeDir, 'office'));
 const env = {...process.env, OFFICE_PI_LOCAL: '1'};
@@ -128,8 +165,14 @@ try {
   const runnerDir = path.join(lockDir, '.pi-runner-' + lockId);
   await fs.mkdir(runnerDir, {recursive: true});
   unlock = await lockfile.lock(runnerDir).catch(error => {
-    if (error.code === 'ELOCKED') throw new Error('这个办公室已有 Pi 在运行。请打开已启动的工作台。');
-    throw error;
+    if (error.code !== 'ELOCKED') throw error;
+    // Started twice (for example a second double-click): show the office already running.
+    if (openWhenReady) {
+      openBrowser(`http://127.0.0.1:${Number(env.OFFICE_PORT || 3080)}/`);
+      console.log('Agent Office 已经在运行，已打开工作台。');
+      process.exit(0);
+    }
+    throw new Error('这个办公室已经在运行。请打开已启动的工作台。');
   });
   if (!shared)
     studio = await openAgentStudio({
@@ -150,6 +193,7 @@ try {
       studio && (req => (call ? studio.fetch(req) : Response.json({error: '办公室正在启动。'}, {status: 503})))
   });
   console.log('本机工作台 ' + office.url + '/');
+  if (openWhenReady) openBrowser(office.url + '/');
   const rpc = mcpClient(office.url);
   const {tools} = await rpc('tools/list');
   const schema = name => tools.find(t => t.name === name)?.inputSchema.properties;
