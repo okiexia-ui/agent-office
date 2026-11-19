@@ -9,7 +9,10 @@
     "format": "prettier --write .",
     "build": "node scripts/build.mjs",
     "test": "node --test tests/*.test.mjs",
-    "test:browser": "npm run build && node --test tests/browser/*.test.mjs",
+    "test:browser": "npm run build && node --test --test-concurrency=1 tests/browser/*.test.mjs",
+    "start": "node scripts/local.mjs --env-file=.env.local --open",
+    "local": "node scripts/local.mjs --env-file=.env.local",
+    "pi:install": "npm install --prefix .office-local/pi-runtime --ignore-scripts --save-exact --no-audit --no-fund @earendil-works/pi-coding-agent@1.5.2",
     "dev": "node scripts/dev.mjs",
     "preview": "node scripts/preview.mjs",
     "icons": "node scripts/make-icons.mjs",
@@ -22,6 +25,6 @@
     "proper-lockfile": "4.1.2"
   },
   "engines": {
-    "node": ">=20.11"
+    "node": ">=22.19"
   }
 }

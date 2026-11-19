@@ -1,9 +1,12 @@
 import {MODELS, initialState, validState} from './data.js';
 import {resultsForMessage, highlightedMessage} from './collaboration-view.js';
 import {mentionedAgents} from './channel.js';
-import {escapeHTML as esc, VISUAL_KINDS, visualBody, isolatedDocument} from './visual-renderer.js';
+import {escapeHTML as esc, VISUAL_KINDS, visualBody, isolatedDocument, visualDownload} from './visual-renderer.js';
+import {onLoopback, readLocalConfig} from './local-mode.js';
 const $ = selector => document.querySelector(selector);
 const demo = new URLSearchParams(location.search).get('demo') === '1';
+const localConfig = demo ? null : await readLocalConfig();
+const localMode = localConfig?.mode;
 const memoryKey = 'agent-office-workspace-demo-v2',
   draftKey = 'agent-office-workspace-drafts-' + (demo ? 'demo' : 'live');
 let state = demo ? initialState() : {agents: [], tasks: [], activities: []},
@@ -33,8 +36,9 @@ const time = value => new Date(value).toLocaleTimeString('zh-CN', {hour: '2-digi
 const scopeList = items => (current === 'group' ? items : items.filter(item => item.agentId === current));
 const currentMessages = () => conversations.get(current) || [];
 const statusLabels = {working: '工作中', thinking: '处理中', resting: '在线待命'};
-const isOnline = a => demo || !!(a.lastSeen && Date.now() - a.lastSeen < 300000);
-const status = a => (demo ? '演示伙伴' : isOnline(a) ? statusLabels[a.status] : '等待连接');
+const isOnline = a => !a.managedDisabled && (demo || !!(a.lastSeen && Date.now() - a.lastSeen < 300000));
+const status = a =>
+  a.managedDisabled ? '已停用' : demo ? '演示伙伴' : isOnline(a) ? statusLabels[a.status] : '等待连接';
 const avatar = a => {
   const m = MODELS[a?.model] || MODELS.Hermes;
   return `<span class="avatar" aria-hidden="true" style="--avatar-bg:${m.bg};--avatar-ink:${m.color}">${m.mark}</span>`;
@@ -117,13 +121,51 @@ function toggleVisual(show) {
   frameVisibility();
   if (compactScreen.matches) (show ? $('#close-visual') : $('#visual-toggle')).focus({preventScroll: true});
 }
+// First-run starting points for the local edition: each fills in the Agent studio, so the
+// only remaining choice is a model.
+const TEMPLATES = {
+  editor: {
+    name: '产品编辑',
+    role: '整理产品文档、发布说明和交付清单',
+    instructions:
+      '把收到的材料整理成结构清楚的文档或表格。先给结论，再列要点；数字、名称和日期保持原样，不确定的内容标注「待确认」。需要交付时，按要求发布成共享文档或共享表格。'
+  },
+  reviewer: {
+    name: '审校',
+    role: '检查文稿的事实、表述和格式',
+    instructions:
+      '逐条指出问题并给出修改建议，按「问题 / 位置 / 建议」整理。保持作者原意；无法核实的事实单独列出，不要猜测。最后给一句总体评价。'
+  },
+  researcher: {
+    name: '资料研究',
+    role: '归纳资料并给出有依据的结论',
+    instructions:
+      '先确认问题范围，再分点归纳。区分事实、推断和建议，只依据提供的材料或可以核实的信息；资料不足时直接说明还缺什么。'
+  }
+};
+const studioMode = () => localConfig?.studio === true;
+// No members yet: the local edition invites you to create one; a remote office waits for one to connect.
+function onboarding() {
+  if (studioMode())
+    return `<div class="empty-chat onboarding"><span class="empty-symbol" aria-hidden="true">✳</span><h2>先请来第一位成员</h2><p>给它名字、职责和工作方式，再选一个模型：本机 Pi，或 DeepSeek、OpenAI 等 API。之后在群聊里点名它，或私聊交代工作。</p><div class="suggestions">${Object.entries(
+      TEMPLATES
+    )
+      .map(
+        ([key, t]) =>
+          `<button data-template="${key}"><span class="template-name">${esc(t.name)}<small>${esc(t.role)}</small></span><span>创建 ↗</span></button>`
+      )
+      .join('')}</div><button class="onboarding-blank" data-template="">从空白开始创建</button></div>`;
+  return `<div class="empty-chat onboarding"><span class="empty-symbol" aria-hidden="true">✳</span><h2>还没有伙伴加入</h2><p>让已经运行的 Agent 通过 MCP 连接这个办公室。它登记后会坐进左边的办公室，消息、任务和成果都在这里。</p><div class="suggestions"><button data-connect>查看连接方式 <span>↗</span></button></div></div>`;
+}
 function renderOfficeContext() {
   const online = state.agents.filter(isOnline).length;
   $('#office-presence').textContent = demo
     ? `${state.agents.length} 位演示伙伴`
-    : hasConnected
-      ? `${online} / ${state.agents.length} 在线`
-      : '正在同步';
+    : !hasConnected
+      ? '正在同步'
+      : state.agents.length
+        ? `${online} / ${state.agents.length} 在线`
+        : '还没有成员';
   const active = state.tasks.filter(t => t.status === 'active');
   $('#office-caption').textContent =
     current === 'group'
@@ -141,9 +183,13 @@ function renderOfficeContext() {
             })
             .join('')
       : '<span>' +
-          (!online && !demo
-            ? '等待伙伴连接，收到任务后会在这里同步。'
-            : '伙伴们现在没有执行中的任务，可以在群聊里讨论下一步。') +
+          (demo || online
+            ? '伙伴们现在没有执行中的任务，可以在群聊里讨论下一步。'
+            : !studioMode()
+              ? '等待伙伴连接，收到任务后会在这里同步。'
+              : state.agents.length
+                ? '成员都已停用或还没启动，可以在「创建 Agent」里启用。'
+                : '创建第一位成员后，它会坐进办公室，正在推进的任务也会显示在这里。') +
           '</span>'
   );
 }
@@ -159,7 +205,8 @@ function renderSidebar() {
         a =>
           `<button class="conversation-row ${current === a.id ? 'selected' : ''}" data-agent="${esc(a.id)}" title="${esc(a.role)}" ${current === a.id ? 'aria-current="true"' : ''}>${avatar(a)}<span><strong>${esc(a.name)}</strong><small><i class="online-dot ${isOnline(a) ? '' : 'away'}"></i>${esc(demo ? statusLabels[a.status] : status(a))}</small></span></button>`
       )
-      .join('') || '<p class="panel-caption">没有匹配的伙伴</p>'
+      .join('') ||
+      `<p class="panel-caption">${query ? '没有匹配的伙伴' : studioMode() ? '还没有成员 · 点右上角「创建 Agent」' : '还没有伙伴连接'}</p>`
   );
   $('#group-chat').classList.toggle('selected', current === 'group');
   $('#group-chat').setAttribute('aria-current', String(current === 'group'));
@@ -180,7 +227,7 @@ function renderHeader() {
   $('#conversation-subtitle').textContent = group
     ? `${state.agents.length} 位 AI 伙伴 + 你 · 同一群聊，共享上下文`
     : a
-      ? `${a.model} · ${status(a)} · 独立私聊`
+      ? `${a.id === 'pi-local' ? a.role : a.model} · ${status(a)} · 独立私聊`
       : '正在读取伙伴信息';
   $('#connection-note').textContent = demo
     ? '演示空间 · 以下分工、发言与成果均为示例。'
@@ -188,22 +235,28 @@ function renderHeader() {
       ? '正在连接办公室，暂时保留当前记录。'
       : group
         ? '群聊中可以互相点名、引用回复，并一起查看成果。'
-        : !a || !isOnline(a)
-          ? '伙伴尚未连接。可以先留言，连接后由它读取并回复。'
-          : '伙伴已连接，回复和执行结果会自动同步。';
+        : a?.managedDisabled
+          ? '此伙伴已停用。可以先留言，重新启用后它会继续处理。'
+          : !a || !isOnline(a)
+            ? '伙伴尚未连接。可以先留言，连接后由它读取并回复。'
+            : '伙伴已连接，回复和执行结果会自动同步。';
   $('#composer-foot').textContent = demo
     ? '示例对话 · 未调用真实模型'
     : group
       ? '群聊共享上下文 · 真实回复由运行中的 Agent 提交'
-      : '独立私聊 · 成果同步到协作区';
-  $('#composer-input').placeholder = group ? '@伙伴分配工作，或和大家一起讨论…' : `和 ${a?.name || '伙伴'} 说点什么…`;
+      : '独立私聊 · 主动发布的成果对全办公室可见';
+  $('#composer-input').placeholder = !group
+    ? `和 ${a?.name || '伙伴'} 说点什么…`
+    : demo || state.agents.length
+      ? '@伙伴分配工作，或和大家一起讨论…'
+      : studioMode()
+        ? '先请来一位成员，再在这里分配工作…'
+        : '伙伴连接后，就可以在这里分配工作…';
   $('#visual-scope').textContent = group ? '全员交付的成果，在同一处查看' : `${a?.name || '伙伴'} 的成果与执行记录`;
-  $('#recipients').hidden = !group || targets.size === 0;
-  renderRecipients();
 }
 function renderRecipients() {
-  $('#recipients').hidden = current !== 'group' || targets.size === 0;
   targets = new Set([...targets].filter(id => state.agents.some(a => a.id === id)));
+  $('#recipients').hidden = current !== 'group' || (!targets.size && !deliveryKind());
   setHTML(
     $('#recipients'),
     `<button type="button" data-target="all" aria-pressed="${targets.size === state.agents.length && targets.size > 0}">@all</button>` +
@@ -222,14 +275,19 @@ function renderMessages() {
     current,
     list,
     linked.map(v => [v.id, v.messageId]),
-    state.agents.map(a => [a.id, a.name])
+    state.agents.map(a => [a.id, a.name]),
+    hasConnected
   ]);
   if (signature === messageSignature) return;
   const log = $('#message-log'),
     nearEnd = log.scrollHeight - log.scrollTop - log.clientHeight < 100 || !messageSignature;
   messageSignature = signature;
+  if (!list.length && !demo && hasConnected && !state.agents.length) {
+    log.innerHTML = onboarding();
+    return;
+  }
   if (!list.length) {
-    log.innerHTML = `<div class="empty-chat"><span class="empty-symbol" aria-hidden="true">✳</span><h2>一个想法，<br>和伙伴一起做出来。</h2><p>左边是伙伴们的办公室，右边一起讨论。点名分工、互相回应，完成的图表与文档直接交付到协作区。</p><div class="suggestions"><button data-prompt="请整理当前任务，并把进度发布成图表。">把当前任务变成图表 <span>↗</span></button><button data-prompt="请梳理这个项目的下一步，发布一份行动计划文档。">一起想清楚下一步 <span>↗</span></button><button data-prompt="请做一个能交互的 HTML 小工具，发布到 Visual。">把想法变成可交互的作品 <span>↗</span></button></div></div>`;
+    log.innerHTML = `<div class="empty-chat"><span class="empty-symbol" aria-hidden="true">✳</span><h2>一个想法，<br>和伙伴一起做出来。</h2><p>左边是伙伴们的办公室，右边一起讨论。点名分工、互相回应，完成的图表与文档直接交付到协作区。</p><div class="suggestions"><button data-kind="chart" data-prompt="请整理当前任务，并把进度发布成图表。">把当前任务变成图表 <span>↗</span></button><button data-kind="document" data-prompt="请梳理这个项目的下一步，把行动计划文档发布到成果区。">一起想清楚下一步 <span>↗</span></button><button data-kind="html" data-prompt="请做一个能交互的 HTML 小工具，发布到 Visual。">把想法变成可交互的作品 <span>↗</span></button></div></div>`;
     return;
   }
   log.innerHTML = list
@@ -257,17 +315,38 @@ function renderMessages() {
     .join('');
   if (nearEnd) log.scrollTop = log.scrollHeight;
 }
+const visualCommand = /^\s*(?:@\S+\s+)*\/visual\s+(document|chart|table|html)\b/i;
+function deliveryKind() {
+  if (!localConfig?.studio) return '';
+  return $('#composer-input').value.match(visualCommand)?.[1] || $('#delivery-kind').value;
+}
+function outgoingContent() {
+  const content = $('#composer-input').value.trim(),
+    kind = deliveryKind();
+  return kind && content && !visualCommand.test(content) ? `/visual ${kind} ${content}` : content;
+}
 function renderComposer() {
-  const input = $('#composer-input');
+  const content = outgoingContent(),
+    kind = deliveryKind();
+  renderRecipients();
+  const needsRecipient = kind && current === 'group' && !mentions(content).length;
+  $('#delivery-kind').hidden = !localConfig?.studio;
   $('#send-button').disabled =
-    !input.value.trim() ||
-    input.value.length > 2000 ||
+    !content ||
+    content.length > 2000 ||
+    needsRecipient ||
     sending.has(current) ||
     (!demo && !hasConnected) ||
     (current !== 'group' && !state.agents.some(a => a.id === current));
   $('#send-button').textContent = sending.has(current) ? '…' : '↑';
   $('#composer-hint').textContent =
-    input.value.length > 1800 ? `${input.value.length} / 2000` : 'Enter 发送 · Shift + Enter 换行';
+    content.length > 1800
+      ? `${content.length} / 2000`
+      : needsRecipient
+        ? '选一位负责交付的伙伴'
+        : kind
+          ? '成果对全办公室可见'
+          : 'Enter 发送 · Shift + Enter 换行';
   $('#quote-draft').hidden = !quote;
   $('#quote-text').textContent = quote ? `回复 ${quote.authorName || '你'}：${quote.content}` : '';
 }
@@ -312,8 +391,11 @@ async function renderVisuals() {
   $('#visual-picker').hidden = !items.length;
   if (!selectedVisual) {
     visualSignature = '';
+    // Asking for a chart only makes sense once someone is there to make it.
     $('#visual-content').innerHTML =
-      '<div class="visual-empty"><span aria-hidden="true">◫</span><div><h3>讨论之后，留下可以使用的成果。</h3><p>图表、文档、表格与交互作品，会由伙伴直接交付到这里。</p></div><button id="try-visual">请伙伴做张图表 ↗</button></div>';
+      '<div class="visual-empty"><span aria-hidden="true">◫</span><div><h3>讨论之后，留下可以使用的成果。</h3><p>图表、文档、表格与交互作品，会由伙伴直接交付到这里。</p></div>' +
+      (demo || state.agents.length ? '<button id="try-visual">请伙伴做张图表 ↗</button>' : '') +
+      '</div>';
     return;
   }
   const id = selectedVisual,
@@ -329,8 +411,9 @@ async function renderVisuals() {
     const signature = JSON.stringify(visual);
     if (signature === visualSignature) return;
     visualSignature = signature;
+    const download = visualDownload(visual);
     $('#visual-content').innerHTML =
-      `<article class="artifact"><header class="artifact-header"><span class="artifact-type">${VISUAL_KINDS[visual.kind]}${demo ? ' · 演示示例' : ''}</span><h3>${esc(visual.title)}</h3>${visual.summary ? `<p class="artifact-summary">${esc(visual.summary)}</p>` : ''}</header>${visual.kind === 'html' ? '<div id="html-host"></div>' : `<div class="artifact-content">${visualBody(visual)}</div>`}<footer class="artifact-footer"><span>${esc(visual.agentName)} · ${time(visual.createdAt)}</span><button id="copy-result">复制${visual.kind === 'html' ? '源码' : '内容'}</button></footer></article>`;
+      `<article class="artifact"><header class="artifact-header"><span class="artifact-type">${VISUAL_KINDS[visual.kind]}${demo ? ' · 演示示例' : ''}</span><h3>${esc(visual.title)}</h3>${visual.summary ? `<p class="artifact-summary">${esc(visual.summary)}</p>` : ''}</header>${visual.kind === 'html' ? '<div id="html-host"></div>' : `<div class="artifact-content">${visualBody(visual)}</div>`}<footer class="artifact-footer"><span>${esc(visual.agentName)} · ${time(visual.createdAt)}</span><div class="artifact-actions"><button id="download-result" type="button">${download.label}</button><button id="copy-result">复制${visual.kind === 'html' ? '源码' : '内容'}</button></div></footer></article>`;
     if (visual.kind === 'html') {
       const preview = document.createElement('iframe');
       preview.className = 'artifact-frame';
@@ -340,6 +423,16 @@ async function renderVisuals() {
       preview.srcdoc = isolatedDocument(visual.content);
       $('#html-host').append(preview);
     }
+    $('#download-result').onclick = () => {
+      const url = URL.createObjectURL(new Blob([download.text], {type: download.type}));
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = download.name;
+      document.body.append(link);
+      link.click();
+      link.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 10000);
+    };
     $('#copy-result').onclick = () => copyText(visual.content, '已复制成果内容');
     updateURL();
   } catch {
@@ -364,6 +457,7 @@ async function selectConversation(id) {
   saveDraft();
   current = id;
   quote = null;
+  $('#delivery-kind').value = '';
   targets.clear();
   selectedVisual = null;
   visualSignature = '';
@@ -414,11 +508,15 @@ async function poll() {
     // Presence ages even when nothing changed (an Agent goes quiet), so refresh the scene.
     sendOfficeState();
     hasConnected = true;
-    $('#sync-status').textContent = '● 实时连接';
+    $('#sync-status').textContent =
+      localMode === 'local' ? '● 本地办公室' : localMode === 'remote' ? '● 远程共享办公室' : '● 实时连接';
     errorAt('#chat-error', '');
     errorAt('#visual-error', '');
     if (current !== 'group' && !state.agents.some(a => a.id === current)) {
       current = 'group';
+      $('#delivery-kind').value = '';
+      targets.clear();
+      quote = null;
       selectedVisual = null;
       $('#composer-input').value = drafts.get(current) || '';
       updateURL();
@@ -443,8 +541,9 @@ function mentions(content) {
   return all ? state.agents.map(a => a.id) : [...new Set([...targets, ...mentionedAgents(content, state.agents)])];
 }
 async function send() {
-  const content = $('#composer-input').value.trim();
-  if (!content || content.length > 2000 || sending.has(current) || (!demo && !hasConnected)) return;
+  renderComposer();
+  if ($('#send-button').disabled) return;
+  const content = outgoingContent();
   const requestId = crypto.randomUUID(),
     scope = current;
   const message = {
@@ -467,6 +566,7 @@ async function send() {
   };
   conversations.set(scope, [...(conversations.get(scope) || []), message]);
   $('#composer-input').value = '';
+  $('#delivery-kind').value = '';
   saveDraft();
   quote = null;
   targets.clear();
@@ -777,6 +877,14 @@ $('#connection-details').href = './office.html?connect=1' + (demo ? '&demo=1' : 
 $('#mode-switch').href = demo ? './' : '?demo=1';
 $('#mode-switch').textContent = demo ? '返回实时工作台' : '体验演示';
 $('#mcp-address').value = location.origin + '/mcp';
+if (onLoopback && !demo) {
+  $('#connection-details').textContent = '本机 MCP 连接配置 ↗';
+  $('#connect-dialog > p').textContent =
+    localMode === 'remote'
+      ? '本机 Pi 可以和远程 Hermes 在这个办公室收发消息、领取任务。'
+      : '用 npm run local 启动 Pi。它上线后，点「Pi（本机）」私聊，或在群聊点名它。';
+  $('#connect-dialog li').textContent = '同一台电脑上的其他 Agent 也可以使用上面的 MCP 地址。';
+}
 frame.src = './embed.html' + (demo ? '?demo=1' : '');
 frame.addEventListener('load', () => {
   $('#office-loading').hidden = true;
@@ -801,7 +909,7 @@ $('#expand-results').onclick = () => toggleVisual(!$('.workbench').classList.con
 $('#start-chat').onclick = async () => {
   await selectConversation('group');
   targets = new Set(state.agents.map(a => a.id));
-  renderRecipients();
+  renderComposer();
   $('#composer-input').focus();
 };
 $('#work-strip').onclick = e => {
@@ -820,8 +928,9 @@ $('#recipients').onclick = e => {
   const id = b.dataset.target;
   if (id === 'all') targets = targets.size === state.agents.length ? new Set() : new Set(state.agents.map(a => a.id));
   else targets.has(id) ? targets.delete(id) : targets.add(id);
-  renderRecipients();
+  renderComposer();
 };
+$('#delivery-kind').onchange = renderComposer;
 $('#composer').onsubmit = e => {
   e.preventDefault();
   send();
@@ -841,6 +950,15 @@ $('#quote-cancel').onclick = () => {
   renderComposer();
 };
 $('#message-log').onclick = e => {
+  const template = e.target.closest('[data-template]');
+  if (template) {
+    openStudio(TEMPLATES[template.dataset.template]);
+    return;
+  }
+  if (e.target.closest('[data-connect]')) {
+    $('#connect-dialog').showModal();
+    return;
+  }
   const person = e.target.closest('[data-private]');
   if (person && state.agents.some(a => a.id === person.dataset.private)) {
     selectConversation(person.dataset.private);
@@ -851,6 +969,7 @@ $('#message-log').onclick = e => {
     quoted = e.target.closest('[data-quote]'),
     visual = e.target.closest('[data-visual]');
   if (prompt) {
+    if (localConfig?.studio) $('#delivery-kind').value = prompt.dataset.kind;
     $('#composer-input').value = prompt.dataset.prompt;
     saveDraft();
     renderComposer();
@@ -863,7 +982,6 @@ $('#message-log').onclick = e => {
   if (quoted) {
     quote = currentMessages().find(m => m.id === quoted.dataset.quote);
     if (quote?.authorId) targets.add(quote.authorId);
-    renderRecipients();
     renderComposer();
     $('#composer-input').focus();
   }
@@ -875,6 +993,7 @@ $('#visual-picker').onclick = e => {
 };
 $('#visual-content').onclick = e => {
   if (e.target.closest('#try-visual')) {
+    if (localConfig?.studio) $('#delivery-kind').value = 'chart';
     $('#composer-input').value = '请把当前任务整理成图表，发布到 Visual。';
     saveDraft();
     renderComposer();
@@ -899,7 +1018,39 @@ $('.visual-tabs').onkeydown = e => {
   selectTab(tabs[next]);
   $('#tab-' + tabs[next]).focus();
 };
-$('#connect-button').onclick = () => $('#connect-dialog').showModal();
+// The Agent studio (local edition only); `template` prefills a new member.
+async function openStudio(template) {
+  if (!studioMode()) return $('#connect-dialog').showModal();
+  try {
+    const {openAgentStudio} = await import('./agent-studio.js');
+    await openAgentStudio({
+      template,
+      onChanged: poll,
+      onAgent: async agent => {
+        await selectConversation(agent.id);
+        await poll();
+        $('#composer-input').focus();
+      },
+      onConnect: () => $('#connect-dialog').showModal()
+    });
+  } catch {
+    toast('暂时无法打开工作室，请刷新页面重试');
+  }
+}
+const connectButton = $('#connect-button');
+if (localConfig?.studio === true) {
+  $('#connect-dialog > p').textContent = '其他 Agent 客户端可以通过本机 MCP 地址加入这个办公室。';
+  $('#connect-dialog .muted').textContent =
+    '通过工作室创建的 Agent 会在本机启动。外部伙伴的执行方式由各自的客户端配置。';
+  connectButton.innerHTML = '<span aria-hidden="true">＋</span> 创建 Agent';
+  connectButton.onclick = () => openStudio();
+  const entry = new URL(location.href);
+  if (entry.searchParams.get('studio') === '1') {
+    entry.searchParams.delete('studio');
+    history.replaceState(null, '', entry);
+    connectButton.click();
+  }
+} else connectButton.onclick = () => $('#connect-dialog').showModal();
 $('#close-connect').onclick = () => $('#connect-dialog').close();
 $('#copy-mcp').onclick = () => copyText($('#mcp-address').value, '已复制 MCP 地址');
 window.addEventListener('message', e => {

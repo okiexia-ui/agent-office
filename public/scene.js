@@ -1092,9 +1092,19 @@ export class OfficeScene {
   }
   updateAgents(agents) {
     this.agents = assignSeats(agents);
-    const isOffline = a => 'lastSeen' in a && (!a.lastSeen || Date.now() - a.lastSeen > 300000);
+    const isOffline = a => a.managedDisabled || ('lastSeen' in a && (!a.lastSeen || Date.now() - a.lastSeen > 300000));
     const signature = JSON.stringify(
-      this.agents.map(a => [a.id, a.name, a.model, a.status, a.seatId, a.completed || 0, isOffline(a), !a.lastSeen])
+      this.agents.map(a => [
+        a.id,
+        a.name,
+        a.model,
+        a.status,
+        a.seatId,
+        a.completed || 0,
+        isOffline(a),
+        !a.lastSeen,
+        !!a.managedDisabled
+      ])
     );
     if (signature === this.agentSignature) return;
     this.agentSignature = signature;
@@ -1145,7 +1155,8 @@ export class OfficeScene {
     const taken = new Set();
     for (const a of this.agents) {
       const obj = this.characters.get(a.id);
-      if (a.status === 'resting' && obj?.spot && obj.spot.kind !== 'desk') taken.add(obj.spot.key);
+      if (!a.managedDisabled && a.status === 'resting' && obj?.spot && obj.spot.kind !== 'desk')
+        taken.add(obj.spot.key);
     }
     const t = this.clock.getElapsedTime();
     this.agents.forEach((a, i) => {
@@ -1153,7 +1164,7 @@ export class OfficeScene {
         obj = this.characters.get(a.id) || this.createCharacter(a, i),
         desk = DESKS.find(d => d.id === a.seatId);
       let spot = null;
-      if (a.status === 'resting') {
+      if (!a.managedDisabled && a.status === 'resting') {
         const keep =
           !fresh && obj.spot && obj.spot.kind !== 'desk' ? REST_SPOTS.find(s => s.key === obj.spot.key) : null;
         const free = keep || REST_SPOTS.find(s => !taken.has(s.key));
@@ -1181,11 +1192,20 @@ export class OfficeScene {
       suffix.className = a.status === 'working' && !offline ? 'label-busy' : 'label-sleep';
       if (a.status === 'working' && !offline) {
         for (let j = 0; j < 3; j++) suffix.appendChild(document.createElement('i'));
-      } else suffix.textContent = offline ? (!a.lastSeen ? '待连' : '离线') : a.status === 'thinking' ? '···' : 'zᶻ';
+      } else
+        suffix.textContent = a.managedDisabled
+          ? '已停用'
+          : offline
+            ? !a.lastSeen
+              ? '待连'
+              : '离线'
+            : a.status === 'thinking'
+              ? '···'
+              : 'zᶻ';
       obj.label.replaceChildren(dot, name, suffix);
       obj.label.labelWidth = 0;
-      obj.label.setAttribute('aria-label', `与 ${a.name} 聊天`);
-      obj.label.title = a.name;
+      obj.label.setAttribute('aria-label', `与 ${a.name} 聊天${a.managedDisabled ? '，成员已停用' : ''}`);
+      obj.label.title = a.managedDisabled ? a.name + ' · 已停用' : a.name;
     });
     this.refreshLights();
   }

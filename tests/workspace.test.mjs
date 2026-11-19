@@ -1,7 +1,7 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {createWorker, callTool, seedState} from '../worker/index.js';
-import {visualBody, markdown, isolatedDocument} from '../public/visual-renderer.js';
+import {visualBody, markdown, isolatedDocument, visualDownload} from '../public/visual-renderer.js';
 import {MemoryBucket} from './memory-bucket.mjs';
 const environment = () => ({BUCKET: new MemoryBucket()});
 const worker = createWorker(),
@@ -194,4 +194,31 @@ test('Renderers escape data, preserve signed chart values and isolate HTML capab
   assert.ok(isolated.indexOf('Content-Security-Policy') < isolated.indexOf('<script>'));
   assert.match(isolated, /connect-src 'none'/);
   assert.match(isolated, /form-action 'none'/);
+});
+
+test('visual exports preserve Markdown, chart units and numeric data while escaping spreadsheet text', () => {
+  const raw = '# 项目\n\n正文。';
+  const doc = visualDownload({kind: 'document', title: ' 会议/记录:今天 ', content: raw});
+  assert.equal(doc.name, '会议_记录_今天.md');
+  assert.equal(doc.text, raw);
+  assert.equal(visualDownload({kind: 'document', title: 'CON', content: raw}).name, '_CON.md');
+  const data = {
+    columns: ['项目', '=1+2'],
+    rows: [
+      ['文本,有"引号"\n换行', -12],
+      [' \t+1+2', null],
+      ['-23', true]
+    ]
+  };
+  const table = visualDownload({kind: 'table', title: '收支', content: JSON.stringify(data)});
+  assert.equal(
+    table.text,
+    '\uFEFF"项目","\'=1+2"\r\n"文本,有""引号""\n换行","-12"\r\n"\' \t+1+2",""\r\n"\'-23","true"\r\n'
+  );
+  const chart = visualDownload({
+    kind: 'chart',
+    title: '净增长',
+    content: JSON.stringify({labels: ['一月', '＠name'], values: [-1, 2], unit: '件'})
+  });
+  assert.equal(chart.text, '\uFEFF"项目","数值（件）"\r\n"一月","-1"\r\n"\'＠name","2"\r\n');
 });

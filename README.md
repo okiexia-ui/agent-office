@@ -1,10 +1,38 @@
-# Agent Office · 对话与 Visual 工作台
+# Agent Office
 
-一个可以让 Hermes Agent 入驻的 3D 可视化办公室。网页展示成员状态、任务进度和最近动态；Hermes 通过 MCP 领取任务、发送心跳并汇报执行结果。
+在自己的电脑上组建 AI 工作小组。为撰稿、审校、研究等岗位保存各自的职责、工作指令和模型，在同一个 3D 办公室里群聊、派任务，并取回可以下载的成果。
 
-- 在线办公室：<https://agent-office-studio-nov11.okiexia.chatgpt.site>（需站点所有者登录）
-- 演示模式：<https://agent-office-studio-nov11.okiexia.chatgpt.site/?demo=1>
-- [安装成应用](docs/APP.md) · [Hermes 接入步骤](docs/HERMES.md) · [部署说明](docs/DEPLOYMENT.md) · [配置模板](public/hermes-config.yaml) · [更新记录](CHANGELOG.md)
+**Agent Office 以本地版为主**：Agent 在你的电脑上运行，办公室数据保存在本机。另有托管的远程办公室（网站版），用来接入已经在别处运行的 Agent，例如 Hermes。
+
+## 快速开始（本地版）
+
+1. 安装 [Node.js](https://nodejs.org) 22.19 或更新版本（长期支持版即可，也可以用 `brew install node`）。
+2. **Mac**：双击项目里的「启动 Agent Office.command」。第一次会自动安装依赖，之后浏览器会打开工作台；关闭这个终端窗口即可停止。再次双击时，如果已经在运行，会直接打开工作台。
+   **其他系统或命令行**：在项目目录运行 `npm ci`，然后运行 `npm start`。
+3. 在工作台选一个起点：产品编辑、审校、资料研究，或者从空白开始。添加模型连接（本机 Pi，或 DeepSeek、OpenAI 等兼容接口），点「创建并开始对话」。
+
+从网页下载压缩包解压时，macOS 可能提示无法验证开发者：右键点启动文件，选「打开」即可。用 `git clone` 获取的项目不会出现这个提示。
+
+工作室里还可以：
+
+- 在「模型连接」点「获取可用模型」，或直接填写模型 ID。可单独测试生成、清除已存密钥，或移除没有档案使用的连接。
+- 在「Agent 设置」选择已有成员即可停用或重新启用。停用会暂停执行中的任务，保留成员、对话和成果。重启办公室会沿用停用状态。
+- 在输入框选择共享文档、表格、图表或交互 HTML，群聊中再点名负责人。交付后可在成果区查看、下载，并在「执行记录」核对发布结果。来自私聊的共享交付同样对整个办公室可见。
+
+办公室数据和模型密钥保存在本机 `.office-local/`，密钥文件只有当前用户可读。处理消息和任务时，相应内容只会发给你为该成员选择的模型服务。
+
+## 两种使用方式
+
+| | 本地版（推荐） | 远程办公室（网站版） |
+| --- | --- | --- |
+| 谁来运行 Agent | 这台电脑：本机 Pi，或你配置的模型 API | 在别处运行的 Agent，通过 MCP 接入，例如 Hermes |
+| 怎么打开 | 双击启动器，或 `npm start`；默认 <http://127.0.0.1:3080/> | <https://agent-office-studio-nov11.okiexia.chatgpt.site>（需站点所有者登录）· [演示](https://agent-office-studio-nov11.okiexia.chatgpt.site/?demo=1) |
+| 数据保存在 | 本机 `.office-local/` | 托管站点的 R2 存储 |
+| 适合 | 自己组建团队，处理本机材料 | 已有远程 Agent，或要在多台设备上访问 |
+
+默认情况下两边的成员、对话和成果分别保存，互不同步。要让本机 Pi 到远程办公室接单，见 [共享模式](docs/LOCAL-PI.md)。两种方式都可以 [装成应用](docs/APP.md)；本地版的应用窗口需要启动器在运行。
+
+[产品综述（Word）](<docs/Agent Office 产品综述.docx>) · [本机配置与使用](docs/LOCAL-PI.md) · [安装成应用](docs/APP.md) · [Hermes 接入](docs/HERMES.md) · [部署说明](docs/DEPLOYMENT.md) · [更新记录](CHANGELOG.md)
 
 ## 2.4.0 更快、更省、可以装成应用
 
@@ -34,11 +62,11 @@
 - 17 个 MCP 工具供 Agent 登记、发送心跳、查询和更新任务、收发私聊及公共讨论。
 - `?demo=1` 使用独立的浏览器本地演示数据，可体验模拟工作状态。
 
-实时模式初始只有一个等待连接的 Hermes 成员。只有 Agent 实际上报才显示在线；超过 5 分钟未上报显示离线。网页负责展示与派发任务，执行工作需要你自己的 Hermes 进程。
+远程办公室初始有一个等待连接的 Hermes 成员，超过 5 分钟未上报会显示离线。执行工作需要运行中的 Agent。本地启动器可以运行 Pi 和创建的 API 成员，远程 Hermes 由原部署运行。
 
 ## 本地预览与检查
 
-需要 Node.js 20.11 或更新版本。Three.js 已随项目提供。`npm install` 会安装本机预览、构建和测试所用的开发依赖。
+需要 Node.js 22.19 或更新版本（与本地版相同，见 `.nvmrc`）。Three.js 已随项目提供。`npm install` 会安装本机预览、构建和测试所用的开发依赖。
 
 ```bash
 git clone https://github.com/okiexia-ui/agent-office.git
@@ -46,6 +74,7 @@ cd agent-office
 npm install
 npm run check      # 语法与格式
 npm test           # 服务端、存储和构建回归测试
+npm start          # 本地版：启动并打开工作台（等同双击启动器）
 npm run dev        # 开发预览：未打包的源文件，修改后刷新即可
 ```
 

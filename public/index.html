@@ -43,10 +43,60 @@
       <section class="team-directory" id="sidebar" aria-label="群聊与伙伴私聊"><div class="team-toolbar"><span>你的伙伴 <b id="agent-count"></b></span><label class="team-search"><input id="agent-search" type="search" placeholder="找伙伴" aria-label="搜索伙伴"></label><button id="start-chat">@ 全员讨论</button></div><div class="conversation-switcher"><button class="conversation-row group-row selected" id="group-chat" aria-current="true"><span class="group-mark" aria-hidden="true">#</span><span><strong>一起群聊</strong><small id="group-summary">全员共享</small></span></button><nav id="conversations" aria-label="选择伙伴私聊"></nav></div></section>
       <div class="connection-note" id="connection-note" role="status"></div>
       <div class="message-log" id="message-log" role="log" aria-label="聊天记录" aria-live="polite" aria-relevant="additions"></div>
-      <div class="composer-area"><div class="recipient-list" id="recipients" aria-label="提醒哪些伙伴"></div><div class="quote-draft" id="quote-draft" hidden><span id="quote-text"></span><button id="quote-cancel" aria-label="取消引用">×</button></div><p class="inline-error" id="chat-error" role="alert" hidden></p><form class="composer" id="composer"><textarea id="composer-input" rows="1" maxlength="2000" placeholder="@伙伴分配工作，或和大家一起讨论…" aria-label="输入消息"></textarea><div class="composer-tools"><span id="composer-hint">Enter 发送 · Shift + Enter 换行</span><button id="send-button" type="submit" aria-label="发送消息" disabled>↑</button></div></form><p class="composer-foot" id="composer-foot">群聊共享上下文 · 成果同步在左侧</p></div>
+      <div class="composer-area"><div class="recipient-list" id="recipients" aria-label="提醒哪些伙伴"></div><div class="quote-draft" id="quote-draft" hidden><span id="quote-text"></span><button id="quote-cancel" aria-label="取消引用">×</button></div><p class="inline-error" id="chat-error" role="alert" hidden></p><form class="composer" id="composer"><textarea id="composer-input" rows="1" maxlength="2000" placeholder="@伙伴分配工作，或和大家一起讨论…" aria-label="输入消息"></textarea><div class="composer-tools"><select id="delivery-kind" aria-label="交付形式" hidden><option value="">普通消息</option><option value="document">共享文档</option><option value="table">共享表格</option><option value="chart">共享图表</option><option value="html">交互 HTML</option></select><span id="composer-hint">Enter 发送 · Shift + Enter 换行</span><button id="send-button" type="submit" aria-label="发送消息" disabled>↑</button></div></form><p class="composer-foot" id="composer-foot">群聊共享上下文 · 成果同步在左侧</p></div>
     </main>
   </div>
   <dialog id="connect-dialog" class="connect-dialog"><header><h2>把伙伴带进工作台</h2><button id="close-connect" aria-label="关闭连接指南">×</button></header><p>用已运行的 Agent 连接办公室，消息、执行步骤和 Visual 会出现在这里。</p><label for="mcp-address">MCP 地址</label><div class="copy-row"><input id="mcp-address" readonly><button id="copy-mcp">复制</button></div><ol><li>在 Agent 客户端添加这个 MCP 服务，并完成站点登录或服务认证。</li><li>使用稳定的 Agent ID 登记，然后持续读取私聊与群聊。</li><li>提交真实回复，汇报执行步骤，发布可视化成果。</li></ol><div class="capability-grid"><span>私聊与群聊</span><span>任务与在线状态</span><span>图表 / 表格 / 文档</span><span>交互 HTML / 执行步骤</span></div><p class="muted">当前通过外部 Agent 执行。添加一个名字不会启动模型；这里也不会继承 ChatGPT 的订阅或已连接工具。</p><a id="connection-details" href="./office.html?connect=1">查看 Hermes 连接配置 ↗</a></dialog>
+  <dialog id="agent-studio" class="connect-dialog agent-studio" aria-labelledby="studio-heading">
+    <header><h2 id="studio-heading">Agent 工作室</h2><button type="button" id="studio-close" aria-label="关闭 Agent 工作室">×</button></header>
+    <fieldset id="studio-controls" disabled>
+      <nav class="studio-switch" aria-label="工作室设置"><button type="button" id="studio-profiles" aria-pressed="true">Agent 设置</button><button type="button" id="studio-connections" aria-pressed="false">模型连接</button></nav>
+      <form id="studio-agent-form" autocomplete="off">
+        <label class="studio-picker" id="studio-profile-picker" hidden>选择档案<select id="studio-agent-id"></select></label>
+        <div id="studio-run-controls" class="studio-run-controls" hidden>
+          <span id="studio-agent-status" aria-live="polite"></span>
+          <button type="button" id="studio-toggle-agent" class="studio-text"></button>
+        </div>
+        <div class="studio-grid">
+          <label>Agent 名称<input id="studio-agent-name" required maxlength="24" placeholder="例如：产品编辑"></label>
+          <label>职责<input id="studio-agent-role" maxlength="80" required placeholder="例如：产品文档与发布说明"></label>
+        </div>
+        <label>工作指令<textarea id="studio-agent-instructions" rows="3" maxlength="6000" placeholder="写下它的工作方式、输出格式和需要遵守的约定"></textarea></label>
+        <label>推理模型<select id="studio-agent-connection" required></select></label>
+        <button class="studio-text" type="button" id="studio-add-connection">＋ 添加 API 连接</button>
+        <p class="studio-hint" id="studio-model-hint"></p>
+        <div class="studio-form-actions"><button type="submit" id="studio-save-agent" class="studio-primary">创建并开始对话</button></div>
+      </form>
+      <form id="studio-connection-form" hidden autocomplete="off">
+        <label class="studio-picker" id="studio-connection-picker" hidden>选择连接<select id="studio-connection-id"></select></label>
+        <div class="studio-grid">
+          <label>服务商<select id="studio-provider"><option value="deepseek">DeepSeek</option><option value="openai">OpenAI</option><option value="custom">自定义兼容接口</option></select></label>
+          <label>连接名称<input id="studio-connection-name" required maxlength="80" placeholder="例如：团队写作模型"></label>
+        </div>
+        <label>API 基础地址<input id="studio-base-url" type="url" maxlength="2048" required inputmode="url" autocomplete="off" spellcheck="false" placeholder="https://example.com/v1"></label>
+        <div class="studio-grid">
+          <label>模型 ID<input id="studio-model" maxlength="256" required autocomplete="off" spellcheck="false" placeholder="服务商提供的模型 ID"></label>
+          <label>API Key<input id="studio-api-key" type="password" maxlength="4096" autocomplete="new-password" spellcheck="false"></label>
+        </div>
+        <label class="studio-check" id="studio-clear-key-label" hidden><input type="checkbox" id="studio-clear-key">保存时清除已有密钥</label>
+        <button type="button" class="studio-text" id="studio-fetch-models">获取可用模型</button>
+        <label id="studio-model-list-label" hidden>可用模型<select id="studio-model-list"></select></label>
+        <p class="studio-hint">可手填模型 ID。密钥保存在本机，测试连接会发送一次模型请求。</p>
+        <div class="studio-form-actions"><button type="button" id="studio-test-connection">测试已保存连接</button><button type="submit" class="studio-primary" id="studio-save-connection">保存连接</button></div>
+        <div class="studio-connection-tools">
+          <button class="studio-text" id="studio-use-connection" type="button" hidden>使用此连接创建 Agent →</button>
+          <button class="studio-text studio-remove" id="studio-remove-connection" type="button" hidden>移除连接…</button>
+        </div>
+        <p class="studio-hint" id="studio-connection-usage" hidden></p>
+        <div class="studio-confirm" id="studio-remove-confirm" role="group" aria-labelledby="studio-remove-question" hidden>
+          <p id="studio-remove-question"></p>
+          <div class="studio-form-actions"><button type="button" id="studio-cancel-remove">取消</button><button class="studio-remove" type="button" id="studio-confirm-remove">确认移除</button></div>
+        </div>
+      </form>
+    </fieldset>
+    <p id="studio-feedback" role="status" aria-live="polite" hidden></p>
+    <button id="studio-external" type="button" class="studio-text">通过 MCP 连接外部伙伴 ↗</button>
+  </dialog>
   <dialog id="install-dialog" class="connect-dialog install-dialog" aria-labelledby="install-title"><header><h2 id="install-title">把 Agent Office 装成应用</h2><button id="close-install" aria-label="关闭安装说明">×</button></header><p>安装后它会出现在主屏幕、程序坞或开始菜单，在独立窗口里打开，登录状态和数据与网页版相同。</p><ol><li><b>iPhone / iPad（Safari）</b>：点底部「分享」，选「添加到主屏幕」。</li><li><b>Mac（Safari）</b>：菜单栏「文件」→「添加到程序坞」。</li><li><b>Chrome / Edge</b>：地址栏右侧的安装图标，或菜单里的「安装 Agent Office」。</li><li><b>Android（Chrome）</b>：菜单里的「安装应用」或「添加到主屏幕」。</li></ol><p class="muted">应用仍然连接你的办公室网站。断网时会显示离线提示，恢复网络后继续同步。</p></dialog>
   <div class="toast" id="toast" role="status" hidden></div>
   <script type="module" src="./workspace.js"></script>
