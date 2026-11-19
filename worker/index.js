@@ -4,7 +4,7 @@ import {WORKSPACE_TOOLS, callWorkspaceTool} from './workspace.js';
 // and MCP/service callers. No API credential is shipped in browser assets.
 export const VERSION = '2.4.0';
 const STATE_KEY = 'office/state-v2.json';
-const MODELS = ['Hermes', 'ChatGPT', 'Claude', 'Codex', 'Gemini', 'Kimi', 'Grok', '豆包', 'DeepSeek'];
+const MODELS = ['Hermes', 'ChatGPT', 'Claude', 'Codex', 'Gemini', 'Kimi', 'Grok', '豆包', 'DeepSeek', 'Pi', 'API'];
 const STATUSES = ['working', 'thinking', 'resting'];
 const TASK_STATUSES = ['queued', 'active', 'paused', 'done'];
 const MAX_BODY = 128000;
@@ -105,6 +105,11 @@ export const TOOLS = [
       {
         agent_id: agentId,
         task_id: idField,
+        expected_status: {
+          type: 'string',
+          enum: TASK_STATUSES,
+          description: 'Apply only while the task has this status.'
+        },
         status: {type: 'string', enum: ['active', 'paused', 'done']},
         progress: {type: 'number', minimum: 0, maximum: 100},
         result: textField('Result summary; do not include secrets', 2000)
@@ -222,6 +227,7 @@ function task(s, taskId) {
   return t;
 }
 function present(a) {
+  if (a.managedDisabled) throw new Problem('成员已停用，请先在 Agent 工作室启用。', 409);
   a.lastSeen = Date.now();
   if (a.role === '等待 Hermes 连接') a.role = '自主执行与协作伙伴';
 }
@@ -237,7 +243,11 @@ function checkedArgs(name, args) {
 async function snapshot(env) {
   if (!env.BUCKET) throw new Problem('Cloud storage is not configured.', 503);
   const object = await env.BUCKET.get(STATE_KEY);
-  if (!object) return {state: seedState(), etag: null};
+  if (!object) {
+    const state = seedState();
+    if (env.PI_OFFICE) state.agents = [];
+    return {state, etag: null};
+  }
   return {state: normalizeState(await object.json()), etag: object.etag};
 }
 async function commit(env, previous, state) {
@@ -249,14 +259,44 @@ async function commit(env, previous, state) {
   });
   return !!result;
 }
+const NO_CHANGE = Symbol('no state change');
 async function mutate(env, fn) {
   for (let attempt = 0; attempt < 5; attempt++) {
     const previous = await snapshot(env);
     const s = structuredClone(previous.state);
     const result = fn(s);
+    if (result === NO_CHANGE) return {result: null, state: previous.state};
     if (await commit(env, previous, s)) return {result, state: s};
   }
   throw new Problem('The office changed concurrently. Read the latest state and retry.', 409);
+}
+// Private to the local runner lifecycle. API state writes cannot forge this flag.
+export async function setManagedAgentEnabled(env, agentId, enabled, profile) {
+  if (!env.PI_OFFICE) throw new Problem('Local managed office required.', 403);
+  if (typeof enabled !== 'boolean') throw new Problem('Invalid enabled flag.');
+  id(agentId, 'agent_id');
+  await mutate(env, state => {
+    const agent = state.agents.find(a => a.id === agentId);
+    if (!agent) return NO_CHANGE;
+    const name = str(profile?.name ?? agent.name, 'name', 24);
+    const role = str(profile?.role ?? agent.role, 'role', 80);
+    const model = pick(profile?.model ?? agent.model, MODELS, 'model');
+    const sameStatus = Boolean(agent.managedDisabled) === !enabled;
+    if (sameStatus && name === agent.name && role === agent.role && model === agent.model) return NO_CHANGE;
+    Object.assign(agent, {name, role, model});
+    if (sameStatus) return;
+    if (enabled) {
+      delete agent.managedDisabled;
+    } else {
+      agent.managedDisabled = true;
+      agent.lastSeen = null;
+      agent.status = 'resting';
+      for (const task of state.tasks) {
+        if (task.agentId === agentId && task.status === 'active') task.status = 'paused';
+      }
+      activity(state, agent.name, '已停用，执行中的任务已暂停');
+    }
+  });
 }
 function normalizeState(s) {
   return {
@@ -655,6 +695,8 @@ export async function callTool(name, args, env) {
         if (a.status === 'done') return {task: t};
         throw new Problem('Completed tasks cannot be reopened.', 409);
       }
+      if (a.expected_status !== undefined && t.status !== pick(a.expected_status, TASK_STATUSES, 'expected_status'))
+        throw new Problem('Task status changed. Read the latest state before updating.', 409);
       const status = a.status ? pick(a.status, ['active', 'paused', 'done'], 'status') : t.status;
       if (
         a.progress !== undefined &&
@@ -690,27 +732,37 @@ export function validateReplacement(input, current) {
     input.activities.length > 40
   )
     throw new Problem('Invalid office data.');
-  let agents = input.agents.map(a => ({
-    seatId: a.seatId ?? current.agents.find(old => old.id === a.id)?.seatId ?? null,
-    id: id(a.id),
-    name: str(a.name, 'name', 24),
-    model: pick(a.model, MODELS, 'model'),
-    role: str(a.role, 'role', 80),
-    status: pick(a.status, STATUSES, 'status'),
-    completed: 0,
-    lastSeen: current.agents.find(old => old.id === a.id)?.lastSeen ?? null
-  }));
+  if (current.agents.some(a => a.managedDisabled && !input.agents.some(next => next?.id === a.id)))
+    throw new Problem('停用的成员及其记录归 Agent 工作室管理。', 409);
+  let agents = input.agents.map(a => {
+    const previous = current.agents.find(old => old.id === a.id);
+    // A full-state browser save can move a seat, but must keep the lifecycle
+    // marker and profile managed by the studio, including its offline presence.
+    if (previous?.managedDisabled) return {...previous, seatId: a.seatId ?? previous.seatId ?? null};
+    return {
+      seatId: a.seatId ?? previous?.seatId ?? null,
+      id: id(a.id),
+      name: str(a.name, 'name', 24),
+      model: pick(a.model, MODELS, 'model'),
+      role: str(a.role, 'role', 80),
+      status: pick(a.status, STATUSES, 'status'),
+      completed: 0,
+      lastSeen: previous?.lastSeen ?? null
+    };
+  });
   if (new Set(agents.map(a => a.id)).size !== agents.length) throw new Problem('Duplicate Agent IDs.');
   const seats = agents.map(a => a.seatId).filter(Boolean);
   if (seats.some(seat => !DESKS.some(d => d.id === seat)) || new Set(seats).size !== seats.length)
     throw new Problem('Invalid or duplicate workstation.');
   agents = assignSeats(agents);
   const tasks = input.tasks.map(t => {
-    if (!agents.some(a => a.id === t.agentId)) throw new Problem('Task assignee is missing.');
+    const assignee = agents.find(a => a.id === t.agentId);
+    if (!assignee) throw new Problem('Task assignee is missing.');
     if (typeof t.progress !== 'number' || !Number.isFinite(t.progress) || t.progress < 0 || t.progress > 100)
       throw new Problem('Invalid task progress.');
     const previous = current.tasks.find(x => x.id === t.id);
     const status = pick(previous ? t.status : 'queued', TASK_STATUSES, 'task status');
+    if (status === 'active' && assignee.managedDisabled) throw new Problem('请先启用该成员，再继续任务。', 409);
     return {
       ...(previous || {}),
       id: id(t.id),

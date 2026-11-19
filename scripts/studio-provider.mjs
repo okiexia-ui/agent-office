@@ -1,0 +1,102 @@
+// The local office sends only this agent's instructions and the current conversation to its configured API.
+export class ModelServiceError extends Error {}
+
+export function validateBaseUrl(value) {
+  const invalid = '请填写模型 API 的 HTTPS 基础地址。本机回环地址也可以使用 HTTP。';
+  if (typeof value !== 'string') throw new Error(invalid);
+  const base = value.trim();
+  if (!/^https?:\/\//i.test(base) || /[\s\\?#]/.test(base) || !URL.canParse(base)) throw new Error(invalid);
+  const url = new URL(base);
+  const local = ['127.0.0.1', 'localhost', '[::1]'].includes(url.hostname);
+  if ((url.protocol !== 'https:' && !local) || url.username || url.password) throw new Error(invalid);
+  return url.origin + url.pathname.replace(/\/+$/, '').replace(/\/chat\/completions$/, '');
+}
+
+function httpError(status) {
+  const hint = {
+    400: '请检查模型 ID 与接口兼容性。',
+    401: '请检查 API Key。',
+    402: '请检查服务账户余额。',
+    403: '请检查凭证权限与模型访问权限。',
+    404: '请检查基础地址和模型 ID。',
+    429: '请检查配额或稍后重试。'
+  }[status];
+  return new ModelServiceError(`模型服务返回 HTTP ${status}。${hint || '请检查模型服务状态。'}`);
+}
+
+async function readJson(response) {
+  // Count decoded bytes while reading. This also bounds compressed and chunked responses.
+  const chunks = [];
+  let bytes = 0;
+  if (!response.body) throw new ModelServiceError('模型服务返回了空响应。');
+  for await (const chunk of response.body) {
+    bytes += chunk.length;
+    if (bytes > 1024 * 1024) throw new ModelServiceError('模型服务的响应超过了 1 MiB。');
+    chunks.push(chunk);
+  }
+  try {
+    return JSON.parse(Buffer.concat(chunks, bytes).toString('utf8'));
+  } catch {
+    throw new ModelServiceError('模型服务未返回可读取的 JSON。');
+  }
+}
+
+async function providerRequest(connection, route, {signal, send, body, timeout}) {
+  const url = validateBaseUrl(connection.baseUrl) + route;
+  const deadline = AbortSignal.timeout(timeout);
+  const requestSignal = signal ? AbortSignal.any([signal, deadline]) : deadline;
+  signal?.throwIfAborted();
+  try {
+    const response = await send(url, {
+      method: body ? 'POST' : 'GET',
+      headers: {
+        ...(body && {'Content-Type': 'application/json'}),
+        Accept: 'application/json',
+        ...(connection.apiKey && {Authorization: 'Bearer ' + connection.apiKey})
+      },
+      ...(body && {body: JSON.stringify(body)}),
+      redirect: 'manual',
+      signal: requestSignal
+    });
+    if (!response.ok) {
+      await response.body?.cancel().catch(() => {});
+      throw httpError(response.status);
+    }
+    return await readJson(response);
+  } catch (error) {
+    signal?.throwIfAborted();
+    if (deadline.aborted) throw new ModelServiceError('模型服务请求超时，请稍后重试。');
+    if (error instanceof ModelServiceError) throw error;
+    throw new ModelServiceError('连接模型服务失败，请检查 API 地址和网络。');
+  }
+}
+
+export async function generateApi(connection, prompt, {signal, instructions = '', send = fetch} = {}) {
+  const messages = [];
+  if (instructions.trim()) messages.push({role: 'system', content: instructions});
+  messages.push({role: 'user', content: prompt});
+  const data = await providerRequest(connection, '/chat/completions', {
+    signal,
+    send,
+    timeout: 120000,
+    body: {model: connection.model, messages, stream: false}
+  });
+  const reply = data?.choices?.[0]?.message?.content;
+  if (typeof reply !== 'string' || !reply.trim())
+    throw new ModelServiceError('模型服务未返回文本回复，请检查模型和接口格式。');
+  return reply.trim();
+}
+
+export async function listApiModels(connection, {signal, send = fetch} = {}) {
+  const catalog = await providerRequest(connection, '/models', {signal, send, timeout: 30000});
+  if (!Array.isArray(catalog?.data)) throw new ModelServiceError('该服务未返回兼容的模型列表。可以手动填写模型 ID。');
+  const ids = new Set();
+  for (const item of catalog.data) {
+    const id = item?.id;
+    if (typeof id !== 'string' || !id.trim() || id.length > 256 || /[\u0000-\u001f\u007f]/.test(id)) continue;
+    if (id === connection.apiKey || (connection.apiKey?.length >= 12 && id.includes(connection.apiKey))) continue;
+    ids.add(id.trim());
+    if (ids.size === 256) break;
+  }
+  return [...ids];
+}

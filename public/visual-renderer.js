@@ -87,3 +87,46 @@ export function isolatedDocument(content) {
   // Never add allow-same-origin to the hosting iframe. This policy precedes all generated markup.
   return `<!doctype html><html><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data: blob:; font-src data:; connect-src 'none'; frame-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'"><meta name="referrer" content="no-referrer"><meta name="viewport" content="width=device-width,initial-scale=1"><style>body{margin:20px;font:14px -apple-system,BlinkMacSystemFont,sans-serif;color:#24382b}*{box-sizing:border-box}button,input,select{font:inherit}button{cursor:pointer}</style></head><body>${content}</body></html>`;
 }
+
+function csvCell(value) {
+  let text = String(value ?? '');
+  // Keep numerical values (including negatives) numeric. Mark formula-like
+  // user/model text as literal before quoting it for spreadsheet import.
+  if (typeof value === 'string' && /^[\s\u0000-\u001f]*[=+@＝＋＠－-]/u.test(text)) text = "'" + text;
+  return '"' + text.replaceAll('"', '""') + '"';
+}
+
+export function visualDownload(visual) {
+  const rawTitle = (visual.title || '成果').replace(/[\\/:*?"<>|\u0000-\u001f\u007f\u202a-\u202e\u2066-\u2069]/g, '_');
+  let title =
+    [...rawTitle]
+      .slice(0, 64)
+      .join('')
+      .trim()
+      .replace(/[. ]+$/, '') || '成果';
+  if (/^(?:con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\.|$)/i.test(title)) title = '_' + title;
+  if (visual.kind === 'document')
+    return {name: title + '.md', type: 'text/markdown;charset=utf-8', text: visual.content, label: '下载 Markdown'};
+  if (visual.kind === 'html') {
+    const titleTag = escapeHTML(visual.title || '交互作品');
+    const source = escapeHTML(isolatedDocument(visual.content));
+    // The sandbox and inner policy follow the artifact when opened from disk.
+    // srcdoc inherits the wrapper policy; allow inline code and data assets in the inner document.
+    const text = `<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; frame-src about:; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data: blob:; font-src data:; base-uri 'none'; form-action 'none'"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${titleTag}</title><style>html,body,iframe{display:block;width:100%;height:100%;margin:0;border:0}</style></head><body><iframe title="${titleTag}" sandbox="allow-scripts" referrerpolicy="no-referrer" srcdoc="${source}"></iframe></body></html>`;
+    return {name: title + '.html', type: 'text/html;charset=utf-8', text, label: '下载交互 HTML'};
+  }
+  const data = JSON.parse(visual.content);
+  const chart = visual.kind === 'chart';
+  const rows = chart
+    ? [
+        ['项目', data.unit ? '数值（' + data.unit + '）' : '数值'],
+        ...data.labels.map((label, i) => [label, data.values[i]])
+      ]
+    : [data.columns, ...data.rows];
+  return {
+    name: title + '.csv',
+    type: 'text/csv;charset=utf-8',
+    text: '\uFEFF' + rows.map(row => row.map(csvCell).join(',')).join('\r\n') + '\r\n',
+    label: chart ? '下载图表数据 CSV' : '下载表格 CSV'
+  };
+}

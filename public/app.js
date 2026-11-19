@@ -1,4 +1,5 @@
 import {MODELS, STATUS, initialState, validState} from './data.js';
+import {onLoopback as LOCAL, readLocalConfig} from './local-mode.js';
 import {DESKS, assignSeats} from './layout.js';
 import {AgentChat} from './chat.js';
 import {ChannelChat} from './channel.js';
@@ -14,18 +15,21 @@ const esc = value =>
 const icon = name => `<svg aria-hidden="true"><use href="#i-${name}"/></svg>`;
 const STORAGE_KEY = 'agent-office-state-v1';
 const DEMO = new URLSearchParams(window.location.search).get('demo') === '1';
-const LOCAL = ['localhost', '127.0.0.1', '[::1]'].includes(window.location.hostname);
+const localConfig = DEMO ? null : await readLocalConfig();
+const localMode = localConfig?.mode;
 const MCP_URL = LOCAL ? window.location.origin + '/mcp' : window.location.origin + '/api/hermes/mcp';
 const AWAY_AFTER = 300000;
 const SMALL = matchMedia('(max-width: 860px)');
 const STAGES = {queued: '待领取', active: '执行中', paused: '已暂停', done: '已完成'};
-const KINDS = {...STATUS, pending: '待连接', offline: '离线'};
+const KINDS = {...STATUS, pending: '待连接', offline: '离线', disabled: '已停用'};
+const enableHint = '在 Agent 工作室启用后可继续处理任务和留言。';
 const FILTERS = [
   ['all', '全部'],
   ['working', '工作中'],
   ['thinking', '思考中'],
   ['resting', '休息中'],
-  ['away', '未连接']
+  ['away', '未连接'],
+  ['disabled', '已停用']
 ];
 
 let stateTag = null,
@@ -248,6 +252,7 @@ function avatar(a) {
 }
 // What the person sees: live status only counts while the Agent keeps reporting in.
 function kind(a) {
+  if (a.managedDisabled) return 'disabled';
   if (DEMO) return a.status;
   if (!a.lastSeen) return 'pending';
   return Date.now() - a.lastSeen > AWAY_AFTER ? 'offline' : a.status;
@@ -304,7 +309,7 @@ function renderChrome() {
     text = '正在保存';
     tone = 'busy';
   } else if (cloudReady) {
-    text = LOCAL ? '本机实时' : '实时同步';
+    text = localMode === 'remote' ? '远程共享' : LOCAL ? '本机实时' : '实时同步';
     tone = 'live';
   } else if (syncFailures) {
     text = '连接中断，重试中';
@@ -352,7 +357,8 @@ function renderTeam() {
         ? '<li class="empty-state"><strong>这个状态下没有伙伴</strong>换一个筛选看看。</li>'
         : `<li class="empty-state"><strong>办公室还没有成员</strong>招募第一位伙伴，给它安排一个工位。<br><button class="button secondary compact" data-open-recruit>${icon('plus')}招募</button></li>`
   );
-  const waiting = !DEMO && cloudReady && state.agents.length > 0 && !state.agents.some(a => a.lastSeen);
+  const waiting =
+    !DEMO && cloudReady && state.agents.length > 0 && !state.agents.some(a => a.lastSeen || a.managedDisabled);
   $('#team-onboard').hidden = !waiting;
   if (waiting)
     setHTML(
@@ -384,7 +390,12 @@ function memberCard(a, index) {
     t && t.status !== 'queued'
       ? `<span class="mini-progress ${t.status === 'paused' ? 'paused' : ''}" style="--p:${Math.round(t.progress)}"><i></i></span>`
       : '';
-  return `<button class="member-card" data-chat="${esc(a.id)}" style="--i:${index}"><span class="member-card-top">${avatar(a)}<span class="member-id"><strong>${esc(a.name)}</strong><small>${esc(a.role)}</small></span></span><span class="member-card-task">${t ? `<em>${STAGES[t.status]}</em> · ${esc(t.title)}` : '<em>空闲，等待下一个任务</em>'}${bar}</span><span class="member-card-meta">${statusTag(a)}<span>${seat ? seat.id.slice(-2) + ' 号' : '未入座'}</span><span>完成 ${a.completed || 0}</span></span></button>`;
+  const taskLine = t
+    ? `<em>${STAGES[t.status]}</em> · ${esc(t.title)}`
+    : a.managedDisabled
+      ? enableHint
+      : '<em>空闲，等待下一个任务</em>';
+  return `<button class="member-card" data-chat="${esc(a.id)}" style="--i:${index}"><span class="member-card-top">${avatar(a)}<span class="member-id"><strong>${esc(a.name)}</strong><small>${esc(a.role)}</small></span></span><span class="member-card-task">${taskLine}${bar}</span><span class="member-card-meta">${statusTag(a)}<span>${seat ? seat.id.slice(-2) + ' 号' : '未入座'}</span><span>完成 ${a.completed || 0}</span></span></button>`;
 }
 function renderMembers() {
   const query = $('#member-search').value.trim().toLowerCase();
@@ -410,7 +421,9 @@ function taskCard(t, index) {
   const actions =
     t.status === 'done'
       ? ''
-      : `<button class="button ghost compact" data-task-action="${t.status === 'paused' ? 'resume' : 'pause'}" data-task-id="${esc(t.id)}">${t.status === 'paused' ? '继续' : '暂停'}</button><button class="button secondary compact" data-task-action="complete" data-task-id="${esc(t.id)}">${icon('check')}标记完成</button>`;
+      : a?.managedDisabled
+        ? '<span class="task-disabled-note">成员已停用。请先在 Agent 工作室启用。</span>'
+        : `<button class="button ghost compact" data-task-action="${t.status === 'paused' ? 'resume' : 'pause'}" data-task-id="${esc(t.id)}">${t.status === 'paused' ? '继续' : '暂停'}</button><button class="button secondary compact" data-task-action="complete" data-task-id="${esc(t.id)}">${icon('check')}标记完成</button>`;
   return `<article class="task-card is-${t.status}" data-task-card="${esc(t.id)}" style="--i:${index}"><div class="task-card-top"><span class="task-stage">${STAGES[t.status]}</span>${t.priority === 'high' ? '<span class="task-priority">优先</span>' : ''}<time>${when}</time></div><h3>${esc(t.title)}</h3>${t.description ? `<p>${esc(t.description)}</p>` : ''}${chain(t)}${t.result ? `<blockquote class="task-result"><strong>结果</strong>${esc(t.result)}</blockquote>` : ''}<div class="task-card-bottom">${a ? `<button class="task-assignee" data-chat="${esc(a.id)}" aria-label="打开 ${esc(a.name)} 的对话">${avatar(a)}<span>${esc(a.name)}</span></button>` : '<span class="task-assignee">未分配</span>'}${actions}</div></article>`;
 }
 function renderTasks() {
@@ -448,8 +461,19 @@ function renderAgentCard(a) {
   const notes = [inbox ? `${inbox} 条留言等待 TA 读取` : '', mentions ? `频道里 ${mentions} 条 @ 待处理` : '']
     .filter(Boolean)
     .join(' · ');
-  const restLabel = a.status === 'resting' ? (t ? '继续任务' : '') : '让 TA 休息';
-  const html = `<div class="agent-task ${t ? '' : 'idle'}"><div class="agent-task-head"><span>${t ? STAGES[t.status] : '空闲'}</span>${t && t.status !== 'queued' ? `<span class="num">${Math.round(t.progress)}%</span>` : ''}</div><p class="agent-task-title">${t ? esc(t.title) : '现在没有任务，可以派一件事给 TA。'}</p>${t ? chain(t, false) : ''}</div>${notes ? `<p class="agent-inbox">${notes}</p>` : ''}<div class="agent-actions"><button class="button primary compact" id="detail-assign">${icon(t ? 'task' : 'plus')}${t ? '查看任务' : '派任务'}</button>${restLabel ? `<button class="button secondary compact" id="detail-rest">${icon(a.status === 'resting' ? 'bolt' : 'coffee')}${restLabel}</button>` : ''}</div><details class="agent-more"><summary>档案</summary><dl class="agent-facts"><dt>模型</dt><dd>${esc(a.model)}</dd><dt>专长</dt><dd class="skill-chips">${MODELS[a.model].skills.map(skill => `<span class="skill-chip">${skill}</span>`).join('')}</dd><dt>工位</dt><dd>${seat ? seat.id.slice(-2) + ' 号' : '未入座'} <button class="link-button" id="detail-seat">换座</button></dd><dt>已完成</dt><dd>${a.completed || 0} 项任务</dd><dt>Agent ID</dt><dd><code>${esc(a.id)}</code></dd></dl></details>`;
+  if (a.managedDisabled) {
+    $('#chat-connection').textContent = '成员已停用。' + enableHint;
+    $('#chat-connect').hidden = true;
+    $('#chat-pending').textContent = '留言已保存，等待重新启用该成员。';
+  }
+  const restLabel = a.managedDisabled ? '' : a.status === 'resting' ? (t ? '继续任务' : '') : '让 TA 休息';
+  const taskHeading = t ? STAGES[t.status] : a.managedDisabled ? '已停用' : '空闲';
+  const taskTitle = t ? esc(t.title) : a.managedDisabled ? enableHint : '现在没有任务，可以派一件事给 TA。';
+  const assignAction =
+    t || !a.managedDisabled
+      ? `<button class="button primary compact" id="detail-assign">${icon(t ? 'task' : 'plus')}${t ? '查看任务' : '派任务'}</button>`
+      : '';
+  const html = `<div class="agent-task ${t ? '' : 'idle'}"><div class="agent-task-head"><span>${taskHeading}</span>${t && t.status !== 'queued' ? `<span class="num">${Math.round(t.progress)}%</span>` : ''}</div><p class="agent-task-title">${taskTitle}</p>${t ? chain(t, false) : ''}</div>${notes ? `<p class="agent-inbox">${notes}</p>` : ''}<div class="agent-actions">${assignAction}${restLabel ? `<button class="button secondary compact" id="detail-rest">${icon(a.status === 'resting' ? 'bolt' : 'coffee')}${restLabel}</button>` : ''}</div><details class="agent-more"><summary>档案</summary><dl class="agent-facts"><dt>模型</dt><dd>${esc(a.model)}</dd><dt>专长</dt><dd class="skill-chips">${MODELS[a.model].skills.map(skill => `<span class="skill-chip">${skill}</span>`).join('')}</dd><dt>工位</dt><dd>${seat ? seat.id.slice(-2) + ' 号' : '未入座'} <button class="link-button" id="detail-seat">换座</button></dd><dt>已完成</dt><dd>${a.completed || 0} 项任务</dd><dt>Agent ID</dt><dd><code>${esc(a.id)}</code></dd></dl></details>`;
   const keepOpen = card.dataset.agent === a.id && card.querySelector('details')?.open;
   if (setHTML(card, html) && keepOpen) card.querySelector('details').open = true;
   card.dataset.agent = a.id;
@@ -604,16 +628,20 @@ function openTask(agentId) {
     toast('办公室已达到 200 项任务上限');
     return;
   }
-  const available = state.agents.filter(a => !taskFor(a.id));
+  const available = state.agents.filter(a => !a.managedDisabled && !taskFor(a.id));
   if (!available.length) {
-    toast('伙伴们都有待办任务，可以先完成任务或招募新成员');
+    toast(
+      state.agents.some(a => a.managedDisabled)
+        ? '没有可接单的成员。可以在 Agent 工作室启用成员，或完成现有任务。'
+        : '伙伴们都有待办任务，可以先完成任务或招募新成员'
+    );
     return;
   }
   $('#task-form').reset();
   $('#task-agent').innerHTML = state.agents
     .map(
       a =>
-        `<option value="${esc(a.id)}" ${taskFor(a.id) ? 'disabled' : ''}>${esc(a.name)} · ${taskFor(a.id) ? '已有任务' : esc(a.role)}</option>`
+        `<option value="${esc(a.id)}" ${a.managedDisabled || taskFor(a.id) ? 'disabled' : ''}>${esc(a.name)} · ${a.managedDisabled ? '已停用' : taskFor(a.id) ? '已有任务' : esc(a.role)}</option>`
     )
     .join('');
   $('#task-agent').value = available.some(a => a.id === agentId) ? agentId : available[0].id;
@@ -685,6 +713,10 @@ document.addEventListener('click', event => {
     const t = state.tasks.find(task => task.id === action.dataset.taskId);
     if (!t || t.status === 'done') return;
     const a = state.agents.find(agent => agent.id === t.agentId);
+    if (a?.managedDisabled && action.dataset.taskAction === 'resume') {
+      toast(enableHint);
+      return;
+    }
     if (action.dataset.taskAction === 'complete') {
       completeTask(t);
       toast('任务已完成');
@@ -716,6 +748,7 @@ $('#agent-card').addEventListener('click', event => {
     else openTask(a.id);
   } else if (event.target.closest('#detail-seat')) officeLife.open(a.seatId);
   else if (event.target.closest('#detail-rest')) {
+    if (a.managedDisabled) return;
     if (a.status === 'resting') {
       if (!t) return;
       t.status = 'active';
@@ -776,6 +809,10 @@ $('#task-form').addEventListener('submit', event => {
     return;
   }
   const a = state.agents.find(agent => agent.id === $('#task-agent').value);
+  if (a?.managedDisabled) {
+    toast(enableHint);
+    return;
+  }
   if (!a || taskFor(a.id)) {
     toast('这位伙伴已有任务，请选择其他成员');
     return;
@@ -994,16 +1031,23 @@ document.addEventListener(
 
 export {state, completeTask, taskFor, activeTaskFor};
 
+if (localConfig?.studio === true) $('#studio-recruit-link').hidden = false;
 if (LOCAL) {
+  $('#connect-btn span').textContent = '连接伙伴';
+  $('#connect-btn').setAttribute('aria-label', '连接伙伴');
+  $('#connect-btn').title = '连接伙伴';
+  $('#connect-title').textContent = '连接本机工作台';
   $('#connect-code').textContent = 'mcp_servers:\n  agent_office_local:\n    url: "' + MCP_URL + '"\n';
-  $('#connect-dialog .modal-description').textContent =
-    '当前是本机调试。把这份配置添加到同一台电脑上的 Agent，连接后即可测试真实的消息收发。';
+  $('#connect-dialog .modal-description').textContent = '把这份配置添加到同一台电脑上的 Agent，即可通过 MCP 登录工位。';
   $('#connect-dialog a[href="/api/hermes/credentials"]').hidden = true;
   $('#connect-dialog .help-item h3').textContent = '连接本机办公室';
   $('#connect-dialog .help-item p').textContent =
-    '保持 npm run dev 运行。这个地址只接受本机连接，不访问线上办公室的数据，也不需要线上密钥。';
-  $('#connect-dialog .form-note').textContent =
-    '上线后使用线上地址和原有的私有访问密钥。聊天不会自动唤醒 Agent，需要它持续读取消息。';
+    localMode === 'remote'
+      ? '工作台从远程办公室读取数据。Pi 在本机运行，Hermes 继续使用远程地址。'
+      : '保持本机服务运行。Pi 用 npm run local 启动，聊天和任务保存在本机。';
+  $$('#connect-dialog .help-item')[1].querySelector('p').textContent =
+    'Pi 会自动用 pi-local 登记。其他 Agent 可用自己的固定 ID 登记并收取消息。';
+  $('#connect-dialog .form-note').textContent = '进入工作台后点成员头像开始私聊，或在任务页选择成员并派发任务。';
 }
 
 if ($('#workspace-link')) $('#workspace-link').href = DEMO ? './?demo=1' : './';

@@ -780,6 +780,17 @@ body.night .avatar {
   background: transparent;
   border: 1.5px dashed var(--ink-4);
 }
+.status.disabled,
+.task-disabled-note {
+  color: var(--ink-3);
+}
+.status.disabled i {
+  height: 2px;
+  background: currentColor;
+}
+.task-disabled-note {
+  font-size: 12px;
+}
 
 .feed {
   border-top: 1px solid var(--line-2);
