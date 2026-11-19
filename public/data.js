@@ -1,4 +1,6 @@
 export const MODELS = {
+  API: {color: '#376988', bg: '#e2eff5', mark: '◇', className: 'api', skills: ['模型 API', '文本协作', '任务处理']},
+  Pi: {color: '#4d8078', bg: '#e4eeeb', mark: 'π', className: 'pi', skills: ['本地推理', '文本协作', '任务处理']},
   Hermes: {
     color: '#bb8b5e',
     bg: '#f5ead8',

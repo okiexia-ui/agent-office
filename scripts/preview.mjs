@@ -4,7 +4,7 @@
 import http from 'node:http';
 import path from 'node:path';
 import {pathToFileURL} from 'node:url';
-import {localBucket} from './local-bucket.mjs';
+import {localBackend, localRequest} from './office-upstream.mjs';
 
 const root = path.resolve(import.meta.dirname, '..');
 const dataDir = process.env.OFFICE_DATA_DIR
@@ -12,22 +12,18 @@ const dataDir = process.env.OFFICE_DATA_DIR
   : path.join(root, '.office-local');
 const port = Number(process.env.OFFICE_PORT || 3090);
 const {default: worker} = await import(pathToFileURL(path.join(root, 'dist/server/index.js')));
-const env = {BUCKET: await localBucket(dataDir), OFFICE_LOCAL: true};
+const backend = await localBackend(worker, dataDir);
 
 http
   .createServer(async (req, res) => {
     try {
-      if (!['127.0.0.1', 'localhost'].includes((req.headers.host || '').split(':')[0])) {
+      const request = localRequest(req, req.socket.localPort);
+      if (!request) {
         res.writeHead(403);
         res.end('Local preview only.');
         return;
       }
-      const init = {method: req.method, headers: req.headers};
-      if (!['GET', 'HEAD'].includes(req.method)) {
-        init.body = req;
-        init.duplex = 'half';
-      }
-      const response = await worker.fetch(new Request(new URL(req.url, `http://127.0.0.1:${port}`), init), env);
+      const response = await backend.fetch(request);
       res.writeHead(response.status, Object.fromEntries(response.headers));
       res.end(Buffer.from(await response.arrayBuffer()));
     } catch (error) {

@@ -22,6 +22,10 @@ export const WORKSPACE_TOOLS = [
         title: workspaceText(100),
         summary: {type: 'string', maxLength: 240},
         kind: {type: 'string', enum: ['document', 'chart', 'table', 'html']},
+        require_active_task: {
+          type: 'boolean',
+          description: 'Publish a new result only while the linked task is active.'
+        },
         content: workspaceText(32000)
       },
       ['agent_id', 'request_id', 'title', 'kind', 'content']
@@ -67,6 +71,53 @@ export const WORKSPACE_TOOLS = [
     annotations: workspaceRead
   }
 ];
+
+export function validateVisualContent(kind, content, Problem = Error) {
+  if (kind === 'chart' || kind === 'table') {
+    let data;
+    try {
+      data = JSON.parse(content);
+    } catch {
+      throw new Problem('Chart and table content must be valid JSON.');
+    }
+    if (!data || typeof data !== 'object' || Array.isArray(data)) throw new Problem('Visual data must be an object.');
+    const labels = value =>
+      Array.isArray(value) &&
+      value.length > 0 &&
+      value.every(v => typeof v === 'string' && v.trim() && v.length <= 120);
+    if (kind === 'chart') {
+      if (
+        !labels(data.labels) ||
+        data.labels.length > 40 ||
+        !Array.isArray(data.values) ||
+        data.values.length !== data.labels.length ||
+        !data.values.every(Number.isFinite) ||
+        (data.unit !== undefined && (typeof data.unit !== 'string' || data.unit.length > 24)) ||
+        Object.keys(data).some(k => !['labels', 'values', 'unit'].includes(k))
+      )
+        throw new Problem('Chart requires 1–40 labels and matching finite values; unit is optional.');
+    } else if (
+      !labels(data.columns) ||
+      data.columns.length > 12 ||
+      !Array.isArray(data.rows) ||
+      data.rows.length > 100 ||
+      Object.keys(data).some(k => !['columns', 'rows'].includes(k)) ||
+      !data.rows.every(
+        row =>
+          Array.isArray(row) &&
+          row.length === data.columns.length &&
+          row.every(
+            cell =>
+              cell === null ||
+              typeof cell === 'boolean' ||
+              (typeof cell === 'number' && Number.isFinite(cell)) ||
+              (typeof cell === 'string' && cell.length <= 1000)
+          )
+      )
+    )
+      throw new Problem('Table requires 1–12 columns and at most 100 matching rows of scalar cells.');
+  }
+}
 
 export async function callWorkspaceTool(name, a, ctx) {
   const {env, snapshot, mutate, Problem, id, str, member, task, present} = ctx;
@@ -117,50 +168,12 @@ export async function callWorkspaceTool(name, a, ctx) {
   if (name === 'office_publish_visual') {
     if (!['document', 'chart', 'table', 'html'].includes(a.kind)) throw new Problem('Invalid visual kind.');
     const content = str(a.content, 'content', 32000);
-    if (a.kind === 'chart' || a.kind === 'table') {
-      let data;
-      try {
-        data = JSON.parse(content);
-      } catch {
-        throw new Problem('Chart and table content must be valid JSON.');
-      }
-      if (!data || typeof data !== 'object' || Array.isArray(data)) throw new Problem('Visual data must be an object.');
-      const labels = value =>
-        Array.isArray(value) &&
-        value.length > 0 &&
-        value.every(v => typeof v === 'string' && v.trim() && v.length <= 120);
-      if (a.kind === 'chart') {
-        if (
-          !labels(data.labels) ||
-          data.labels.length > 40 ||
-          !Array.isArray(data.values) ||
-          data.values.length !== data.labels.length ||
-          !data.values.every(Number.isFinite) ||
-          (data.unit !== undefined && (typeof data.unit !== 'string' || data.unit.length > 24)) ||
-          Object.keys(data).some(k => !['labels', 'values', 'unit'].includes(k))
-        )
-          throw new Problem('Chart requires 1–40 labels and matching finite values; unit is optional.');
-      } else if (
-        !labels(data.columns) ||
-        data.columns.length > 12 ||
-        !Array.isArray(data.rows) ||
-        data.rows.length > 100 ||
-        Object.keys(data).some(k => !['columns', 'rows'].includes(k)) ||
-        !data.rows.every(
-          row =>
-            Array.isArray(row) &&
-            row.length === data.columns.length &&
-            row.every(
-              cell =>
-                cell === null ||
-                typeof cell === 'boolean' ||
-                (typeof cell === 'number' && Number.isFinite(cell)) ||
-                (typeof cell === 'string' && cell.length <= 1000)
-            )
-        )
-      )
-        throw new Problem('Table requires 1–12 columns and at most 100 matching rows of scalar cells.');
-    }
+    validateVisualContent(a.kind, content, Problem);
+    if (
+      a.require_active_task !== undefined &&
+      (typeof a.require_active_task !== 'boolean' || (a.require_active_task && !taskId))
+    )
+      throw new Problem('require_active_task must be boolean and requires task_id when true.');
     payload = {title, kind: a.kind, content, summary: str(a.summary ?? '', 'summary', 240, false), taskId, messageId};
   } else {
     if (!['started', 'completed', 'failed', 'info'].includes(a.status)) throw new Problem('Invalid step status.');
@@ -244,7 +257,11 @@ export async function callWorkspaceTool(name, a, ctx) {
         throw new Problem('request_id already belongs to different content.', 409);
       return previous;
     }
-    if (taskId && task(s, taskId).agentId !== agentId) throw new Problem('Task belongs to another Agent.', 403);
+    if (taskId) {
+      const linkedTask = task(s, taskId);
+      if (linkedTask.agentId !== agentId) throw new Problem('Task belongs to another Agent.', 403);
+      if (a.require_active_task && linkedTask.status !== 'active') throw new Problem('Task is no longer active.', 409);
+    }
     if (messageId) {
       const privateMessage = (s.messages || []).find(m => m.id === messageId);
       const channelMessage = (s.channelMessages || []).find(m => m.id === messageId);
