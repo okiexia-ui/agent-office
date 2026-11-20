@@ -14,9 +14,10 @@ test(
   {timeout: 45000},
   async t => {
     const stateDir = await fs.mkdtemp(path.join(os.tmpdir(), 'studio-controls-'));
+    let localAvailable = true;
     const studio = await openAgentStudio({
       dir: path.join(stateDir, 'studio'),
-      localAvailable: () => true,
+      localAvailable: () => localAvailable,
       startAgent: async () => async () => {}
     });
     const providerRequests = [];
@@ -104,6 +105,21 @@ test(
     await field('toggle-agent').click();
     await page.waitForFunction(() => document.querySelector('#studio-agent-status').textContent.includes('运行中'));
     assert.equal((await catalog()).agents[0].enabled, true);
+    // The GGUF can be offline when the operator reopens settings. Editing an
+    // unrelated API connection must not opt this profile into remote inference.
+    localAvailable = false;
+    await field('close').click();
+    await page.locator('#connect-button').click();
+    await field('agent-id').selectOption(agent.id);
+    assert.equal(await field('agent-connection').inputValue(), 'local');
+    await field('connections').click();
+    await field('connection-id').selectOption(connection.id);
+    await field('connection-name').fill('更新连接名');
+    await field('save-connection').click();
+    await page.waitForFunction(() => document.querySelector('#studio-feedback').textContent.includes('连接已保存'));
+    await field('profiles').click();
+    assert.equal(await field('agent-connection').inputValue(), 'local');
+    assert.ok(await field('save-agent').isDisabled());
     await field('connections').click();
     await field('remove-connection').click();
     await field('confirm-remove').click();

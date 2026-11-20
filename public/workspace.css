@@ -1248,6 +1248,79 @@ summary:focus-visible {
   font-size: 12px;
   color: var(--green);
 }
+.files-trigger,
+.files-dialog .files-nav button,
+.files-dialog .files-upload button,
+.files-dialog .files-prompts button,
+.files-dialog li > button:last-child {
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  padding: 5px 9px;
+  font-size: 12px;
+  color: var(--green);
+}
+.files-trigger {
+  white-space: nowrap;
+}
+.files-dialog .files-nav,
+.files-dialog .files-upload,
+.files-dialog li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.files-dialog .files-nav {
+  margin: 16px 0 8px;
+}
+.files-dialog #files-folder,
+.files-dialog li > :first-child {
+  flex: 1;
+  min-width: 0;
+  text-align: left;
+  overflow-wrap: anywhere;
+  font-size: 13px;
+  color: var(--ink);
+}
+.files-dialog ul {
+  padding: 0;
+  max-height: 35dvh;
+  overflow-y: auto;
+  margin: 0 0 12px;
+}
+.files-dialog li {
+  border-bottom: 1px solid var(--line);
+  padding: 6px 0;
+}
+.files-dialog li > button:first-child {
+  color: var(--green);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.files-dialog small,
+.files-dialog .files-prompts {
+  font-size: 11px;
+  color: var(--muted);
+}
+.files-dialog .files-upload button {
+  background: var(--pale);
+}
+.files-dialog #files-status {
+  margin: 8px 0;
+}
+.files-dialog #files-status.file-error {
+  color: var(--ink);
+  font-weight: 600;
+}
+.files-dialog .files-prompts {
+  border-top: 1px solid var(--line);
+  padding-top: 10px;
+}
+.files-prompts summary {
+  cursor: pointer;
+}
+.files-prompts button {
+  margin: 0 3px 4px 0;
+}
 .toast {
   position: fixed;
   bottom: 25px;

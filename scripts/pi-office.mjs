@@ -69,7 +69,7 @@ export async function runOfficePi({
     return sending;
   }
 
-  async function answer(queue, key, prompt, kind) {
+  async function answer(queue, key, prompt, kind, request) {
     signal.throwIfAborted();
     if (drafts[queue]?.key === key) return drafts[queue].value;
     const task = queue === 'task';
@@ -81,7 +81,8 @@ export async function runOfficePi({
       throw error;
     }
     try {
-      const text = (await generate(prompt, {signal})).trim();
+      const useWorkspace = !kind && queue !== 'channel';
+      const text = (await generate(prompt, {signal, useWorkspace, request: useWorkspace ? request : undefined})).trim();
       signal.throwIfAborted();
       if (!text) throw new Error('模型返回了空内容。');
       const value = kind ? visualOutcome(kind, text) : task ? taskOutcome(text) : {result: bounded(text, 4000)};
@@ -96,9 +97,8 @@ export async function runOfficePi({
     return drafts[queue].value;
   }
 
-  async function deliver(queue, id, request, prompt) {
-    const kind = requestedVisual(request);
-    if (!kind) return answer(queue, id, prompt);
+  async function deliver(queue, id, request, prompt, kind = requestedVisual(request)) {
+    if (!kind) return answer(queue, id, prompt, null, request);
     if (!visualsEnabled) return {status: 'paused', result: '此办公室尚未提供成果发布接口。'};
     const isTask = queue === 'task';
     const link = isTask ? {task_id: id} : {message_id: id};
@@ -200,7 +200,8 @@ export async function runOfficePi({
       '完成后输出 JSON {"status":"done","result":"实际交付结果"}。遇到阻塞请用 paused，并写明原因。result 最多 2000 字符。',
       JSON.stringify({title: task.title, description: task.description})
     ].join('\n');
-    const outcome = await deliver('task', task.id, [task.title, task.description].filter(Boolean).join('\n'), prompt);
+    const fields = [task.title, task.description].filter(Boolean);
+    const outcome = await deliver('task', task.id, fields.join('\n'), prompt, requestedVisual(...fields));
     if (outcome && (await taskActive(task.id))) {
       await office('office_update_task', {
         task_id: task.id,
@@ -231,9 +232,19 @@ export async function runOfficePi({
         const state = await call('office_get_state', {});
         if (signal.aborted) break;
         if (!state.agents.some(a => a.id === agentId)) await register();
-        if (state.chatPending[agentId]) await privateMessage();
-        if (state.channelPending[agentId]) await channelMessage();
-        if (state.tasks.some(t => t.agentId === agentId && ['active', 'queued'].includes(t.status))) await workTask();
+        const queues = [];
+        if (state.chatPending[agentId]) queues.push(privateMessage);
+        if (state.channelPending[agentId]) queues.push(channelMessage);
+        if (state.tasks.some(t => t.agentId === agentId && ['active', 'queued'].includes(t.status)))
+          queues.push(workTask);
+        for (const processQueue of queues) {
+          if (signal.aborted) break;
+          try {
+            await processQueue();
+          } catch (error) {
+            if (!signal.aborted) onError(error);
+          }
+        }
       } catch (error) {
         if (signal.aborted) break;
         onError(error);

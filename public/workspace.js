@@ -20,6 +20,7 @@ let visuals = [],
   pollAgain = false,
   syncTag = null,
   syncScope = null,
+  fileScope = null,
   visualRequest = 0,
   toastTimer;
 const conversations = new Map(),
@@ -214,6 +215,10 @@ function renderSidebar() {
 function renderHeader() {
   const a = state.agents.find(a => a.id === current),
     group = current === 'group';
+  const showFiles = localConfig?.fileTools === true && Boolean(a) && fileScope === current;
+  $('#open-agent-files').hidden = !showFiles;
+  const filesDialog = $('#agent-files');
+  if (filesDialog.open && (!showFiles || filesDialog.dataset.agent !== current)) filesDialog.close();
   $('#conversation-title').textContent = group ? '办公室群聊' : a?.name || '伙伴对话';
   $('#conversation-kind').textContent = group ? 'TEAM CONVERSATION' : 'DIRECT MESSAGE';
   setHTML($('#room-symbol'), group ? '#' : avatar(a));
@@ -505,6 +510,7 @@ async function poll() {
       steps = data.steps;
       if (!data.conversation.missing) applyConversation(data.conversation);
     }
+    fileScope = response.headers.get('X-Office-Member-Files') === '1' ? scope : null;
     // Presence ages even when nothing changed (an Agent goes quiet), so refresh the scene.
     sendOfficeState();
     hasConnected = true;
@@ -921,6 +927,27 @@ $('#group-chat').onclick = () => selectConversation('group');
 $('#conversations').onclick = e => {
   const b = e.target.closest('[data-agent]');
   if (b) selectConversation(b.dataset.agent);
+};
+$('#open-agent-files').onclick = async () => {
+  const agent = state.agents.find(a => a.id === current);
+  if (!agent || !localConfig?.fileTools || fileScope !== current) return;
+  try {
+    const {openAgentFiles} = await import('./agent-files.js');
+    if (agent.id !== current) return;
+    openAgentFiles(agent, prompt => {
+      if (agent.id !== current) return;
+      const input = $('#composer-input');
+      const text = (input.value.trimEnd() ? input.value.trimEnd() + '\n' : '') + prompt;
+      if (text.length > input.maxLength) return toast('草稿已接近上限，缩短后再添加示例。');
+      input.value = text;
+      $('#delivery-kind').value = '';
+      saveDraft();
+      renderComposer();
+      input.focus();
+    });
+  } catch {
+    toast('暂时无法打开成员文件，请刷新后重试');
+  }
 };
 $('#recipients').onclick = e => {
   const b = e.target.closest('[data-target]');

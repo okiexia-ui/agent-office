@@ -58,7 +58,12 @@ export async function openAgentStudio({onAgent, onConnect, onChanged, template})
     const sources = data.connections.map(c => [c.id, c.name + ' · ' + c.model]);
     if (data.localAvailable) sources.unshift(['local', 'Pi · 本机模型']);
     options('agent-connection', sources, sources.length ? null : ['', '请先添加模型连接']);
-    if (sources.some(([id]) => id === selected)) field('agent-connection').value = selected;
+    const select = field('agent-connection');
+    if (selected === 'local' && !data.localAvailable) {
+      const item = new Option('Pi · 本机模型暂不可用', 'local', false, true);
+      item.disabled = true;
+      select.add(item);
+    } else if (sources.some(([id]) => id === selected)) select.value = selected;
     describeSource();
   }
 
@@ -71,7 +76,9 @@ export async function openAgentStudio({onAgent, onConnect, onChanged, template})
       ? '处理消息和任务时，相应内容会发送到 ' + new URL(entry.baseUrl).host + '。'
       : data.localAvailable
         ? '使用本机加载的模型推理。'
-        : '添加一个模型连接后即可创建 Agent。';
+        : source === 'local'
+          ? '恢复本机模型，或选择可用的 API 连接。'
+          : '添加一个模型连接后即可创建 Agent。';
   }
 
   function chooseAgent(id = '') {
@@ -82,13 +89,6 @@ export async function openAgentStudio({onAgent, onConnect, onChanged, template})
     field('agent-role').value = agent?.role || '';
     field('agent-instructions').value = agent?.instructions || '';
     renderSources(agent?.connectionId);
-    if (agent?.connectionId === 'local' && !data.localAvailable) {
-      const item = new Option('Pi · 本机模型暂不可用', 'local', false, true);
-      item.disabled = true;
-      field('agent-connection').add(item);
-      describeSource();
-      field('model-hint').textContent = '恢复本机模型，或选择可用的 API 连接。';
-    }
     renderAgentStatus();
     feedback(agent?.error, agent?.status === 'error');
   }

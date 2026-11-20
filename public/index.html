@@ -39,13 +39,26 @@
       </section>
     </aside>
     <main class="conversation" id="conversation">
-      <header class="conversation-head"><span id="room-symbol" class="room-symbol" aria-hidden="true">#</span><div class="room-title"><span class="eyebrow" id="conversation-kind">TEAM CONVERSATION</span><h1 id="conversation-title">办公室群聊</h1><p id="conversation-subtitle">让伙伴在同一个上下文里协作</p></div><div class="room-avatars" id="room-avatars" aria-hidden="true"></div><button class="visual-toggle" id="visual-toggle" aria-label="打开协作成果" aria-expanded="false">成果 <span id="mobile-result-count"></span> ◫</button></header>
+      <header class="conversation-head"><span id="room-symbol" class="room-symbol" aria-hidden="true">#</span><div class="room-title"><span class="eyebrow" id="conversation-kind">TEAM CONVERSATION</span><h1 id="conversation-title">办公室群聊</h1><p id="conversation-subtitle">让伙伴在同一个上下文里协作</p></div><div class="room-avatars" id="room-avatars" aria-hidden="true"></div><button id="open-agent-files" class="files-trigger" type="button" aria-haspopup="dialog" hidden>成员文件</button><button class="visual-toggle" id="visual-toggle" aria-label="打开协作成果" aria-expanded="false">成果 <span id="mobile-result-count"></span> ◫</button></header>
       <section class="team-directory" id="sidebar" aria-label="群聊与伙伴私聊"><div class="team-toolbar"><span>你的伙伴 <b id="agent-count"></b></span><label class="team-search"><input id="agent-search" type="search" placeholder="找伙伴" aria-label="搜索伙伴"></label><button id="start-chat">@ 全员讨论</button></div><div class="conversation-switcher"><button class="conversation-row group-row selected" id="group-chat" aria-current="true"><span class="group-mark" aria-hidden="true">#</span><span><strong>一起群聊</strong><small id="group-summary">全员共享</small></span></button><nav id="conversations" aria-label="选择伙伴私聊"></nav></div></section>
       <div class="connection-note" id="connection-note" role="status"></div>
       <div class="message-log" id="message-log" role="log" aria-label="聊天记录" aria-live="polite" aria-relevant="additions"></div>
       <div class="composer-area"><div class="recipient-list" id="recipients" aria-label="提醒哪些伙伴"></div><div class="quote-draft" id="quote-draft" hidden><span id="quote-text"></span><button id="quote-cancel" aria-label="取消引用">×</button></div><p class="inline-error" id="chat-error" role="alert" hidden></p><form class="composer" id="composer"><textarea id="composer-input" rows="1" maxlength="2000" placeholder="@伙伴分配工作，或和大家一起讨论…" aria-label="输入消息"></textarea><div class="composer-tools"><select id="delivery-kind" aria-label="交付形式" hidden><option value="">普通消息</option><option value="document">共享文档</option><option value="table">共享表格</option><option value="chart">共享图表</option><option value="html">交互 HTML</option></select><span id="composer-hint">Enter 发送 · Shift + Enter 换行</span><button id="send-button" type="submit" aria-label="发送消息" disabled>↑</button></div></form><p class="composer-foot" id="composer-foot">群聊共享上下文 · 成果同步在左侧</p></div>
     </main>
   </div>
+  <dialog id="agent-files" class="connect-dialog files-dialog" aria-labelledby="files-title">
+    <header><h2 id="files-title">成员文件</h2><button type="button" id="files-close" aria-label="关闭成员文件">×</button></header>
+    <div class="files-nav"><button type="button" id="files-parent" aria-label="返回上一级目录">↑ 上一级</button><span id="files-folder" aria-label="当前目录"></span><button type="button" id="files-reload">刷新</button></div>
+    <ul id="files-list" aria-label="当前目录中的文件"></ul>
+    <div class="files-upload"><button type="button" id="files-upload">上传文件</button><input type="file" id="files-input" aria-label="选择上传文件" hidden><small>上传至当前目录，每个文件最多 16 MiB</small></div>
+    <p id="files-status" role="status" aria-live="polite"></p>
+    <details class="files-prompts"><summary>用这些文件给 Pi 派活</summary>
+      <p>选一个示例填入私聊，再按实际文件名修改。</p>
+      <button type="button" data-file-prompt="请创建 Word 文件「{folder}会议纪要.docx」，列出会议主题、决议和待办三部分。">创建 Word 文档</button>
+      <button type="button" data-file-prompt="请在浏览器打开成员文件「{folder}表单.html」，填写姓名为小林，将截图保存为「{folder}表单截图.png」。">填写网页并截图</button>
+      <button type="button" id="files-mac-prompt" data-file-prompt="请在 Mac 的文本编辑中打开成员文件「{folder}说明.txt」。">在 Mac 文本编辑中打开文件</button>
+    </details>
+  </dialog>
   <dialog id="connect-dialog" class="connect-dialog"><header><h2>把伙伴带进工作台</h2><button id="close-connect" aria-label="关闭连接指南">×</button></header><p>用已运行的 Agent 连接办公室，消息、执行步骤和 Visual 会出现在这里。</p><label for="mcp-address">MCP 地址</label><div class="copy-row"><input id="mcp-address" readonly><button id="copy-mcp">复制</button></div><ol><li>在 Agent 客户端添加这个 MCP 服务，并完成站点登录或服务认证。</li><li>使用稳定的 Agent ID 登记，然后持续读取私聊与群聊。</li><li>提交真实回复，汇报执行步骤，发布可视化成果。</li></ol><div class="capability-grid"><span>私聊与群聊</span><span>任务与在线状态</span><span>图表 / 表格 / 文档</span><span>交互 HTML / 执行步骤</span></div><p class="muted">当前通过外部 Agent 执行。添加一个名字不会启动模型；这里也不会继承 ChatGPT 的订阅或已连接工具。</p><a id="connection-details" href="./office.html?connect=1">查看 Hermes 连接配置 ↗</a></dialog>
   <dialog id="agent-studio" class="connect-dialog agent-studio" aria-labelledby="studio-heading">
     <header><h2 id="studio-heading">Agent 工作室</h2><button type="button" id="studio-close" aria-label="关闭 Agent 工作室">×</button></header>

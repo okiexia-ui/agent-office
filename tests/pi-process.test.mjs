@@ -37,6 +37,17 @@ test('Pi print receives office content on stdin, with remote credentials and too
   Object.assign(env, {OFFICE_PI_READ_TOOLS: '1', OFFICE_PI_PROVIDER: 'local', OFFICE_PI_MODEL: 'small'});
   const {args} = JSON.parse(await generatePi(prompt, {env}));
   assert.deepEqual(args.slice(-6), ['--tools', 'read,grep,find,ls', '--provider', 'local', '--model', 'small']);
+  const restricted = JSON.parse(await generatePi(prompt, {env, allowHostRead: false}));
+  assert.ok(restricted.args.includes('--no-tools'));
+  assert.ok(restricted.args.includes('--no-mcp'));
+  const personal = JSON.parse(
+    await generatePi(prompt, {env, allowHostRead: false, workspace: '/private/tmp/pi-test', nativeApps: true})
+  );
+  assert.ok(personal.args.includes('--extension'));
+  assert.equal(
+    personal.args[personal.args.indexOf('--tools') + 1],
+    'office_document,office_browser' + (process.platform === 'darwin' ? ',office_mac' : '')
+  );
 });
 
 test('Pi handles missing executables, time limits and cancellation', async t => {

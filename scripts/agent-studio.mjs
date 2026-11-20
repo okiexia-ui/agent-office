@@ -239,6 +239,9 @@ export async function openAgentStudio({
   }
 
   return {
+    isLocalPi(id) {
+      return data.agents.some(a => a.id === id && a.connectionId === 'local');
+    },
     async fetch(request) {
       try {
         const url = new URL(request.url);

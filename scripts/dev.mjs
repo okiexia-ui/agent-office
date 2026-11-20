@@ -22,10 +22,11 @@ const types = {
 export async function startOfficeServer({
   env = process.env,
   stateDir = env.OFFICE_DATA_DIR || path.join(root, '.office-local'),
-  studioFetch
+  studioFetch,
+  memberFiles
 } = {}) {
   const port = Number(env.OFFICE_PORT || 3080);
-  const backend = await localBackend(createWorker(), path.resolve(stateDir), env, studioFetch);
+  const backend = await localBackend(createWorker(), path.resolve(stateDir), env, studioFetch, memberFiles);
   const server = http.createServer(async (req, res) => {
     try {
       const request = localRequest(req, server.address().port);
