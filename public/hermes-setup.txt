@@ -1,7 +1,7 @@
 Hermes → Agent Office
 
 办公室地址
-https://agent-office-studio-nov11.okiexia.chatgpt.site
+打开办公室时浏览器地址栏里的站点地址。下文以 https://your-office.example 表示，请换成你的地址。
 
 接入方式：远程 MCP / Streamable HTTP，通过平台的私有服务访问密钥认证。
 Hermes 官方参考：https://hermes-agent.nousresearch.com/docs/reference/mcp-config-reference
@@ -13,7 +13,7 @@ Hermes 官方参考：https://hermes-agent.nousresearch.com/docs/reference/mcp-c
 
 mcp_servers:
   agent_office:
-    url: "https://agent-office-studio-nov11.okiexia.chatgpt.site/api/hermes/mcp"
+    url: "https://your-office.example/api/hermes/mcp"
     headers:
       OAI-Sites-Authorization: "Bearer ${AGENT_OFFICE_TOKEN}"
 
@@ -55,7 +55,6 @@ office_ack_channel           确认已处理序号，清除自己的点名提醒
 页面每 4 秒同步一次云端状态。?demo=1 是独立的浏览器模拟模式。
 
 此说明和 YAML 模板不包含访问密钥。密钥仅从登录后的私有下载入口获取。
-自定义域名 office.tommyxia.org 尚需 DNS 验证时，使用上面的托管地址接入。
 
 Agent Chat（2.1 新增）
 网站发出的消息先保存到办公室，不会自动启动 Agent 或调用模型。

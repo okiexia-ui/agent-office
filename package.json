@@ -1,9 +1,14 @@
 {
   "name": "agent-office",
-  "version": "2.4.0",
+  "version": "2.5.0",
   "private": true,
   "type": "module",
-  "description": "A visible AI office: a 3D workspace, team chat and shared results for MCP Agents, installable as an app",
+  "description": "Build an AI work team on your own computer: agents with roles and models, team chat, tasks and downloadable results in a 3D office",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/okiexia-ui/agent-office.git"
+  },
   "scripts": {
     "check": "node scripts/check.mjs",
     "format": "prettier --write .",

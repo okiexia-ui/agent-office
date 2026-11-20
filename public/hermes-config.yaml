@@ -1,6 +1,7 @@
 # Merge into ~/.hermes/config.yaml; keep your existing mcp_servers entries.
+# Replace your-office.example with the address of your own office site.
 mcp_servers:
   agent_office:
-    url: "https://agent-office-studio-nov11.okiexia.chatgpt.site/api/hermes/mcp"
+    url: "https://your-office.example/api/hermes/mcp"
     headers:
       OAI-Sites-Authorization: "Bearer ${AGENT_OFFICE_TOKEN}"
