@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {createWorker, callTool, seedState, TOOLS} from '../worker/index.js';
 import {MemoryBucket} from './memory-bucket.mjs';
 const env = () => ({BUCKET: new MemoryBucket()});
-const origin = 'https://your-office.example';
+const origin = 'https://office.example';
 const req = (path, body, headers = {}) =>
   new Request(origin + path, {
     method: body ? 'POST' : 'GET',
