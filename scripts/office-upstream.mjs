@@ -155,7 +155,7 @@ export function createOfficeUpstream(env, send = fetch) {
   };
 }
 
-export async function localBackend(worker, dataDir, env = process.env, studioFetch) {
+export async function localBackend(worker, dataDir, env = process.env, studioFetch, memberFiles) {
   const remote = createOfficeUpstream(env);
   const bindings = remote
     ? {}
@@ -163,23 +163,29 @@ export async function localBackend(worker, dataDir, env = process.env, studioFet
   return {
     remoteOrigin: remote?.origin,
     setAgentEnabled: (id, enabled, profile) => setManagedAgentEnabled(bindings, id, enabled, profile),
-    fetch(request) {
-      const path = new URL(request.url).pathname;
+    async fetch(request) {
+      const url = new URL(request.url);
+      const path = url.pathname;
       if (path === '/api/local-mode')
         return request.method === 'GET'
           ? response({
               mode: remote ? 'remote' : 'local',
               remoteOrigin: remote?.origin || null,
-              ...(studioFetch && !remote ? {studio: true} : {})
+              ...(studioFetch && !remote ? {studio: true} : {}),
+              ...(memberFiles && !remote ? {fileTools: true} : {})
             })
           : response({error: 'Method not allowed.'}, 405);
+      if (path.startsWith('/api/studio/files/'))
+        return memberFiles && !remote ? memberFiles.fetch(request) : response({error: '此办公室没有本机文件区。'}, 404);
       if (path === '/api/studio' || path.startsWith('/api/studio/'))
         return studioFetch && !remote
           ? studioFetch(request)
           : response({error: '仅本地 Agent 工作台支持此操作。'}, 404);
-      return remote && (path.startsWith('/api/') || path === '/mcp')
-        ? remote.fetch(request)
-        : worker.fetch(request, bindings);
+      if (remote && (path.startsWith('/api/') || path === '/mcp')) return remote.fetch(request);
+      const result = await worker.fetch(request, bindings);
+      if (path === '/api/sync' && memberFiles?.ownsPi(url.searchParams.get('scope')))
+        result.headers.set('X-Office-Member-Files', '1');
+      return result;
     }
   };
 }

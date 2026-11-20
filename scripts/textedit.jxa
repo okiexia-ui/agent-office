@@ -1,0 +1,18 @@
+// Run by /usr/bin/osascript. Input travels through stdin, never as executable script.
+function run() {
+  ObjC.import('Foundation');
+  const input = $.NSFileHandle.fileHandleWithStandardInput.readDataToEndOfFile;
+  const request = JSON.parse(ObjC.unwrap($.NSString.alloc.initWithDataEncoding(input, $.NSUTF8StringEncoding)));
+  const editor = Application('com.apple.TextEdit');
+  const target = Path(request.file);
+  editor.open(target);
+  const doc = editor.documents.whose({path: request.file}).first();
+  if (!doc.exists() || doc.path() !== request.file) throw Error('Requested document is unavailable.');
+  const body = String(doc.text());
+  if (request.action === 'read_text') return JSON.stringify({text:body.slice(0, 16000), truncated:body.length > 16000});
+  if (request.action !== 'append_text' && request.action !== 'append_line') throw Error('Unsupported action.');
+  const newline = request.action === 'append_line' && body && !/[\r\n]$/.test(body) && !/^[\r\n]/.test(request.text);
+  doc.text = body + (newline ? '\n' : '') + request.text;
+  editor.save(doc);
+  return JSON.stringify({status:'saved'});
+}

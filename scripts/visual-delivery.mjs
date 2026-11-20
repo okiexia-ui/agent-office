@@ -9,23 +9,33 @@ const formats = {
   html: 'content 是包含标记的完整自包含 HTML 字符串。交互用内联 JS、CSS，预览会阻止联网和表单提交。'
 };
 
-export function requestedVisual(text) {
+export function requestedVisual(...fields) {
   // The destination is shared. An ordinary request to write or discuss a
   // document in private chat must never implicitly publish its contents.
-  const command = /^\s*(?:@\S+\s+)*\/visual\s+(document|chart|table|html)\b/i.exec(text);
-  if (command) return command[1].toLowerCase();
+  const commandPattern = /^\s*(?:@\S+\s+)*\/visual\s+(document|chart|table|html)\b/i;
+  const command = fields.map(field => commandPattern.exec(field)).find(Boolean);
   // Treat quoted examples and questions about the feature as conversation.
-  const unquoted = text
-    .replace(/((?:```)[\s\S]*?(?:```)|`[^`]*`|“[^”]*”|「[^」]*」|"[^"]*"|《[^》]*》)/g, '')
-    .replace(/^\s*(?:@\S+\s+)*/, '');
+  const unquoted = fields.map(text =>
+    text
+      .replace(/((?:```)[\s\S]*?(?:```)|`[^`]*`|“[^”]*”|「[^」]*」|"[^"]*"|《[^》]*》)/g, '')
+      .replace(/^\s*(?:@\S+\s+)*/, '')
+  );
   // A later line can withdraw permission given in the opening request.
   if (
-    /(?:不要|别|请勿|暂不|先不|取消|停止|禁止)\s*(?:向外|对外|公开)?(?:发|共享|分享|公开)|等我确认|仅供私聊|只(?:在私聊|给我看)|(?:do not|don't)\s+(?:share|publish)/i.test(
-      unquoted
+    /(?:不要|不必|不需|不得|别|请勿|暂不|先不|取消|停止|禁止)(?:\s*(?:向外|对外|公开)?发|[^，。！？;；\n]{0,120}(?:发布|共享|分享|公开))|等我确认|仅供私聊|只(?:在私聊|给我看)|(?:do not|don't)\s+(?:share|publish)/i.test(
+      unquoted.join('\n')
     )
   )
     return null;
-  const instruction = unquoted.split(/[:：\n]/, 1)[0];
+  if (command) return command[1].toLowerCase();
+  for (const field of unquoted) {
+    const kind = publicationKind(field.split(/[:：\n]/, 1)[0]);
+    if (kind) return kind;
+  }
+  return null;
+}
+
+function publicationKind(instruction) {
   if (
     !/^(?:(?:请|麻烦)(?:你|帮我)?|帮我)?(?:把|将|做|为|生成|整理|制作|梳理|创建|绘制|写|发布)|^(?:please\s+)?publish\b/i.test(
       instruction

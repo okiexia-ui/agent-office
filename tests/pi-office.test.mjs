@@ -10,6 +10,7 @@ const agent_id = 'pi-local';
 
 test('visual publishing requires a command or an explicit publication request', () => {
   assert.equal(requestedVisual('@Pi /visual chart 一月 5，二月 6'), 'chart');
+  assert.equal(requestedVisual('/visual document 解释“先别发，等我确认”这句提示'), 'document');
   assert.equal(requestedVisual('请把这份报告发布到共享成果区'), 'document');
   for (const text of [
     '帮我写一份文档',
@@ -21,7 +22,8 @@ test('visual publishing requires a command or an explicit publication request', 
     '请参考如下例句：把这份文档发布到成果区',
     '把文档发布到成果区，等我确认后再操作',
     '请把表格发布到成果区。\n先别发，等我确认。',
-    '请将报告发布到成果区：仅供私聊。'
+    '请将报告发布到成果区：仅供私聊。',
+    '/visual table 本月数量 3。\n先别发，等我确认。'
   ])
     assert.equal(requestedVisual(text), null);
 });
@@ -89,8 +91,11 @@ test('Pi handles only its direct messages, user mentions and assigned tasks; pre
   const prompts = [];
   const errors = await run({
     office,
-    generate: async prompt => {
+    generate: async (prompt, {useWorkspace, request}) => {
       prompts.push(prompt);
+      assert.equal(useWorkspace, !prompt.includes('public question'));
+      if (useWorkspace) assert.ok(['remember lima', 'previous word?', 'work item'].includes(request));
+      else assert.equal(request, undefined);
       if (prompt.includes('work item')) return JSON.stringify({status: 'done', result: 'finished the work'});
       if (prompt.includes('previous word?')) {
         assert.match(prompt, /remember lima/);
@@ -144,6 +149,56 @@ test('Pi reuses a generated reply after a failed write and acknowledges an alrea
   assert.equal(generated.length, 2);
   const {messages} = await office('office_get_channel_messages', {agent_id, after_sequence: 0});
   assert.equal(messages.filter(m => m.authorId === agent_id).length, 1);
+});
+
+test('an unavailable DM write does not prevent independent group replies or assigned work', async () => {
+  const {office, human} = await fixture();
+  await human('chat', {agentId: agent_id, requestId: 'wait', content: '私聊'});
+  await human('channel', {requestId: 'group', mentions: [agent_id], content: '群聊'});
+  await office('office_create_task', {agent_id, request_id: 'task', title: '校对'});
+  let polls = 0,
+    dmGenerations = 0;
+  await run({
+    office,
+    generate: async prompt => {
+      if (prompt.includes('给你的私聊')) dmGenerations++;
+      return prompt.includes('校对') ? '{"status":"done","result":"已校对"}' : '已收到';
+    },
+    finished: () => ++polls === 4,
+    intercept: (name, args, invoke) => {
+      if (name === 'office_reply_message') throw new Error('temporary DM outage');
+      return invoke();
+    }
+  });
+  const state = await office('office_get_state');
+  assert.equal(state.chatPending[agent_id], 1);
+  assert.equal(dmGenerations, 1);
+  assert.equal(state.channelPending[agent_id], 0);
+  assert.equal(state.tasks[0].status, 'done');
+});
+
+test('a delivery request in task details publishes a linked visual and a private task stays private', async () => {
+  const {office} = await fixture();
+  for (const [index, title, description] of [
+    [1, '本周编辑进度', '/visual table 已校对两份稿件'],
+    [2, '本周总结', '请把进度文档发布到成果区。'],
+    [3, '仅供私聊', '请把进度文档发布到成果区。']
+  ])
+    await office('office_create_task', {agent_id, request_id: 'brief' + index, title, description});
+  await run({
+    office,
+    finished: state => state.tasks.every(task => task.status === 'done'),
+    generate: async prompt => {
+      if (!prompt.includes('共享成果区')) return '{"status":"done","result":"已完成"}';
+      if (prompt.includes('/visual table')) return '{"title":"进度表","content":{"columns":["数量"],"rows":[[2]]}}';
+      return '{"title":"编辑报告","content":"已完成本周工作。"}';
+    }
+  });
+  const {visuals} = await office('office_list_visuals', {agent_id});
+  assert.deepEqual(visuals.map(v => [v.taskId, v.kind]).sort(), [
+    ['task_brief1', 'table'],
+    ['task_brief2', 'document']
+  ]);
 });
 
 test('Pi sends working heartbeats during generation and preserves a concurrent operator pause', async () => {
@@ -322,8 +377,9 @@ test('explicit Visual requests deliver all four kinds to the addressed source; p
   }
   const errors = await run({
     office,
-    generate: async prompt => {
+    generate: async (prompt, {useWorkspace}) => {
       if (!prompt.includes('共享成果区')) return '私密答复乙';
+      assert.equal(useWorkspace, false);
       assert.doesNotMatch(prompt, /私密草稿甲|私密答复乙/);
       const request = requests.find(r => prompt.includes(r.request));
       assert.ok(request);

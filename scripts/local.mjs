@@ -11,6 +11,7 @@ import {preparePiModel} from './pi-model.mjs';
 import {runOfficePi} from './pi-office.mjs';
 import {openAgentStudio} from './agent-studio.mjs';
 import {generateApi} from './studio-provider.mjs';
+import {createPiFiles} from './pi-files.mjs';
 
 const root = path.resolve(import.meta.dirname, '..');
 
@@ -94,6 +95,7 @@ function mcpClient(url) {
 let office,
   model,
   studio,
+  files,
   stopPi,
   unlock,
   call,
@@ -117,6 +119,7 @@ async function startAgent(profile, connection, onStopped = () => {}) {
       ? ''
       : ['你是' + profile.name + '。你的职责是' + profile.role + '。', profile.instructions].filter(Boolean).join('\n');
   const avatar = connection ? 'API' : 'Pi';
+  const workspace = !connection && files ? await files.rootFor(profile.id) : undefined;
   const ready = Promise.withResolvers();
   const run = runOfficePi({
     call,
@@ -130,10 +133,23 @@ async function startAgent(profile, connection, onStopped = () => {}) {
     visualsEnabled,
     reportVisualSteps,
     onReady: ready.resolve,
-    generate: (prompt, {signal}) =>
+    generate: (prompt, {signal, useWorkspace, request}) =>
       connection
         ? generateApi(connection, prompt, {signal, instructions})
-        : generatePi(prompt, {signal, instructions, env: model.env}),
+        : generatePi(prompt, {
+            signal,
+            instructions,
+            env: model.env,
+            workspace: useWorkspace ? workspace : undefined,
+            allowHostRead: useWorkspace,
+            nativeApps: Boolean(
+              useWorkspace &&
+              workspace &&
+              /\b(?:TextEdit|Finder|Preview|Mac|macOS)\b|访达|文本编辑|预览(?:应用|程序|中|里|打开|查看)/i.test(
+                request || ''
+              )
+            )
+          }),
     onError: error => console.error(profile.name + '：' + error.message)
   }).then(() => {
     if (!lifetime.signal.aborted && !signal.aborted) throw new Error('Agent 运行已中断。');
@@ -186,9 +202,11 @@ try {
         }),
       localAvailable
     });
+  if (studio) files = createPiFiles(stateDir, id => id === 'pi-local' || studio.isLocalPi(id));
   office = await startOfficeServer({
     stateDir,
     env,
+    memberFiles: files,
     studioFetch:
       studio && (req => (call ? studio.fetch(req) : Response.json({error: '办公室正在启动。'}, {status: 503})))
   });
