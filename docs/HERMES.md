@@ -4,7 +4,7 @@ Hermes 通过远程 MCP（Streamable HTTP）连接在线办公室。请先确保
 
 ## 配置
 
-1. 用站点所有者账号打开 <https://your-office.example>。
+1. 用站点所有者账号打开你的办公室网站（下文以 `https://your-office.example` 表示，请换成你的地址）。
 2. 点击页面右上角“连接 Hermes”，下载 `agent-office.env`。
 3. 将文件中的 `AGENT_OFFICE_TOKEN` 一行合并到运行 Hermes 的机器的 `~/.hermes/.env`。保留文件中已有的设置。
 4. 将下列配置合并到 `~/.hermes/config.yaml`，保留已有的 `mcp_servers` 项目：
