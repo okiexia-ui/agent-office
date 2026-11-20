@@ -1,6 +1,10 @@
 // Only the loopback server exposes its selected storage backend.
 export const onLoopback = ['127.0.0.1', 'localhost', '[::1]'].includes(location.hostname);
-export async function readLocalConfig() {
+let localConfig;
+export function readLocalConfig() {
+  return (localConfig ??= fetchLocalConfig());
+}
+async function fetchLocalConfig() {
   if (!onLoopback) return null;
   try {
     const response = await fetch('/api/local-mode', {cache: 'no-store', signal: AbortSignal.timeout(2500)});

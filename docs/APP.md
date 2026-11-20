@@ -1,4 +1,24 @@
-# 安装成应用 · 2.4.0
+# 安装成应用
+
+## Mac 本地工作台
+
+双击 `Agent Office.app` 会启动本地办公室并在独立窗口中打开工作台。「选择项目」使用 Finder 的文件夹选择器。关闭窗口后，办公室服务会留在后台继续执行任务。
+
+在装有 Xcode 命令行工具、Python 3 和 Node.js 22.19 或更新版本的 Mac 上，可以从项目根目录打包和验证：
+
+```sh
+npm ci
+python3 macos/build.py --project . --output "release/Agent Office.app"
+node macos/smoke.mjs "release/Agent Office.app"
+```
+
+`--project .` 将当前办公室目录记录在本机应用中，运行时沿用这里的 `.env.local`、Pi 和办公室数据。分发给其他人时可省略 `--project`，应用会在 `~/Library/Application Support/Agent Office` 中读取配置并保存数据。生成的应用使用本机架构和本机签名，运行时需要 Node.js。
+
+如果原办公室放在「文稿」里，macOS 首次打开或更新后可能询问是否允许 Agent Office 访问「文稿」。同意后即可继续使用原有数据。如果授权时窗口已经显示「连接超时」，点「重试」即可。
+
+更新时，选用新的输出路径。等旧版任务完成后退出旧版窗口并停止原办公室服务，再双击新版本。工作台会核对服务版本与数据目录。
+
+## 浏览器安装版（PWA）
 
 Agent Office 可以像应用一样安装（PWA）：出现在主屏幕、程序坞或开始菜单，在独立窗口里打开，没有浏览器地址栏。它打开的仍是你的办公室网站，登录状态、权限和数据都与网页版相同。
 
@@ -31,11 +51,10 @@ Agent Office 可以像应用一样安装（PWA）：出现在主屏幕、程序�
 - 手机：长按图标 →「删除 App / 卸载」。
 - Mac 程序坞：右键图标 →「选项」→「从程序坞中移除」，或在「应用程序」文件夹里删除；Chrome / Edge 安装的应用在 `chrome://apps` 或 `edge://apps` 中卸载。
 
-## 目前的边界
+## PWA 的运行方式
 
 - 应用需要网络才能与伙伴协作；它不会在后台运行 Agent，也不会推送系统通知。
 - Agent 仍由你自己的运行环境通过 MCP 接入，安装应用不会启动模型。
-- 没有提交到 App Store 或 Google Play。需要商店上架、系统通知或本地文件访问时，可以在现有网页之外再加原生外壳；HTTP API 与 MCP 可以原样复用。
 
 ## 维护者说明
 

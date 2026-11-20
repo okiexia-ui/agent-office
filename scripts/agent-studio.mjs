@@ -3,7 +3,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import {generateApi, listApiModels, ModelServiceError, validateBaseUrl} from './studio-provider.mjs';
 
-class StudioError extends Error {
+export class StudioError extends Error {
   constructor(message, status = 400) {
     super(message);
     this.status = status;
@@ -17,7 +17,7 @@ function textField(value, label, max, optional = false) {
   return value.trim();
 }
 
-async function readForm(request) {
+export async function readForm(request, limit = 32768) {
   if (request.headers.get('content-type')?.split(';')[0].trim().toLowerCase() !== 'application/json')
     throw new StudioError('请使用 JSON 提交配置。', 415);
   const reader = request.body?.getReader();
@@ -29,9 +29,9 @@ async function readForm(request) {
       const {value, done} = await reader.read();
       if (done) break;
       size += value.byteLength;
-      if (size > 32768) {
+      if (size > limit) {
         await reader.cancel();
-        throw new StudioError('提交的配置超过 32 KB。', 413);
+        throw new StudioError('提交的内容超过 ' + limit / 1024 + ' KB。', 413);
       }
       chunks.push(value);
     }

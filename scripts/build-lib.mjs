@@ -25,7 +25,7 @@ const TYPES = {
 };
 const BINARY = new Set(['.png']);
 // Each page and the script that drives it. Their imports are bundled and split into chunks.
-const PAGES = {'index.html': 'workspace.js', 'office.html': 'app.js', 'embed.html': 'embed.js'};
+const PAGES = {'index.html': 'start-workspace.js', 'office.html': 'app.js', 'embed.html': 'embed.js'};
 // Pages that register the service worker (the embed lives inside the workspace).
 const APP_PAGES = new Set(['index.html', 'office.html']);
 

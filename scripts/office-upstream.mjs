@@ -155,7 +155,7 @@ export function createOfficeUpstream(env, send = fetch) {
   };
 }
 
-export async function localBackend(worker, dataDir, env = process.env, studioFetch, memberFiles) {
+export async function localBackend(worker, dataDir, env = process.env, studioFetch, memberFiles, projects) {
   const remote = createOfficeUpstream(env);
   const bindings = remote
     ? {}
@@ -172,9 +172,13 @@ export async function localBackend(worker, dataDir, env = process.env, studioFet
               mode: remote ? 'remote' : 'local',
               remoteOrigin: remote?.origin || null,
               ...(studioFetch && !remote ? {studio: true} : {}),
+              ...(projects && !remote ? {workbench: true} : {}),
+              ...(env.OFFICE_DESKTOP_RUNTIME && !remote ? {desktopRuntime: env.OFFICE_DESKTOP_RUNTIME} : {}),
               ...(memberFiles && !remote ? {fileTools: true} : {})
             })
           : response({error: 'Method not allowed.'}, 405);
+      if (path === '/api/studio/projects' || path.startsWith('/api/studio/projects/'))
+        return projects && !remote ? projects.fetch(request) : response({error: '此办公室没有本机项目工作台。'}, 404);
       if (path.startsWith('/api/studio/files/'))
         return memberFiles && !remote ? memberFiles.fetch(request) : response({error: '此办公室没有本机文件区。'}, 404);
       if (path === '/api/studio' || path.startsWith('/api/studio/'))

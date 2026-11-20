@@ -10,6 +10,7 @@ import {preflightPi, generatePi} from './pi-process.mjs';
 import {preparePiModel} from './pi-model.mjs';
 import {runOfficePi} from './pi-office.mjs';
 import {openAgentStudio} from './agent-studio.mjs';
+import {openProjectSessions} from './project-sessions.mjs';
 import {generateApi} from './studio-provider.mjs';
 import {createPiFiles} from './pi-files.mjs';
 
@@ -95,6 +96,7 @@ function mcpClient(url) {
 let office,
   model,
   studio,
+  projects,
   files,
   stopPi,
   unlock,
@@ -203,10 +205,22 @@ try {
       localAvailable
     });
   if (studio) files = createPiFiles(stateDir, id => id === 'pi-local' || studio.isLocalPi(id));
+  if (!shared)
+    projects = await openProjectSessions({
+      dir: path.join(stateDir, 'projects'),
+      localAvailable,
+      generate: (prompt, {signal: turnSignal, project}) =>
+        generatePi(prompt, {
+          signal: AbortSignal.any([turnSignal, signal, ...(model.stopped ? [model.stopped] : [])]),
+          project,
+          env: model.env
+        })
+    });
   office = await startOfficeServer({
     stateDir,
     env,
     memberFiles: files,
+    projects,
     studioFetch:
       studio && (req => (call ? studio.fetch(req) : Response.json({error: '办公室正在启动。'}, {status: 503})))
   });
@@ -261,7 +275,7 @@ try {
 } finally {
   controller.abort();
   try {
-    await Promise.allSettled([studio?.close(), stopPi?.()]);
+    await Promise.allSettled([projects?.close(), studio?.close(), stopPi?.()]);
     await model?.close();
   } finally {
     try {
