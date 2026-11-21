@@ -1,0 +1,379 @@
+.unified-office {
+  --studio-height: 54px;
+}
+.unified-office .studio-bar {
+  padding-inline: 20px;
+}
+.unified-office .wordmark {
+  font-size: 21px;
+}
+.unified-office .office-heading {
+  min-height: 42px;
+  padding: 10px 15px;
+}
+.unified-office .office-heading h2 {
+  margin: 0;
+  font-size: 14px;
+}
+.unified-office .workbench {
+  grid-template-columns: minmax(0, 1.94fr) minmax(344px, 1fr);
+  min-height: 0;
+}
+.unified-office .visual-panel {
+  grid-template-rows: minmax(0, 1fr) auto;
+  padding: 10px;
+  gap: 8px;
+}
+.unified-office .office-live,
+.unified-office .visual-results {
+  border-radius: 10px;
+}
+.office-options {
+  position: relative;
+  z-index: 3;
+}
+.office-options > summary {
+  list-style: none;
+  cursor: pointer;
+  letter-spacing: 2px;
+  padding: 2px 8px;
+  font-weight: bold;
+}
+.office-options > div {
+  position: absolute;
+  right: 0;
+  min-width: 148px;
+  display: grid;
+  gap: 2px;
+  padding: 5px;
+  border-radius: 8px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  box-shadow: var(--shadow);
+}
+.office-options :is(a, button) {
+  font-size: 12px;
+  text-align: left;
+  padding: 8px;
+  white-space: nowrap;
+  border-radius: 4px;
+}
+.office-options :is(a, button):hover {
+  background: var(--pale);
+}
+.unified-office .office-caption {
+  padding: 6px 12px;
+}
+.unified-office .work-strip:not(:empty) {
+  display: flex;
+  padding: 4px 10px 8px;
+}
+.unified-office .work-strip small {
+  font-size: 10px;
+}
+.unified-office .results-title h2 {
+  font-size: 13px;
+}
+.unified-office .visual-head {
+  padding: 8px 12px;
+}
+.unified-office .result-mark {
+  font-size: 18px;
+}
+.unified-office .visual-head p,
+.unified-office .conversation-head .eyebrow {
+  display: none;
+}
+.unified-office
+  .workbench:not(.results-expanded):not(.visual-overlay)
+  :is(.visual-tabs, #visual-content, #panel-steps) {
+  display: none;
+}
+.unified-office .workbench:not(.results-expanded):not(.visual-overlay) #panel-results {
+  display: block !important;
+  flex: none;
+  padding: 0 12px 8px;
+}
+.unified-office .visual-picker {
+  padding: 0;
+  gap: 6px;
+}
+.unified-office .visual-picker button {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  max-width: 240px;
+  font-size: 12px;
+  min-height: 32px;
+  padding: 4px 8px;
+}
+.unified-office .visual-picker small {
+  font-size: 10px;
+  color: var(--green);
+  font-weight: 600;
+}
+.unified-office .visual-picker strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-weight: 500;
+}
+.unified-office #result-empty {
+  margin: 0;
+  font-size: 11px;
+}
+.unified-office .workbench.results-expanded .visual-panel {
+  grid-template-rows: minmax(0, 1fr);
+}
+.unified-office :is(.results-expanded, .visual-overlay) #result-empty {
+  display: none;
+}
+.unified-office :is(.results-expanded, .visual-overlay) .visual-picker {
+  padding-bottom: 12px;
+}
+.unified-office .team-directory {
+  padding: 6px 15px 8px;
+}
+.unified-office .conversation-head {
+  min-height: 54px;
+  padding: 8px 15px;
+  gap: 9px;
+}
+.unified-office .conversation-head h1 {
+  font-size: 17px;
+  margin: 0 0 4px;
+}
+.unified-office .room-symbol,
+.unified-office .room-symbol .avatar {
+  width: 32px;
+  height: 32px;
+  border-radius: 9px;
+  font-size: 18px;
+}
+.unified-office .conversation-row {
+  min-height: 34px;
+}
+.unified-office .room-avatars {
+  padding-left: 0;
+}
+.member-tabs {
+  display: flex;
+  flex: none;
+  gap: 3px;
+  padding: 0 14px;
+  border-bottom: 1px solid var(--line);
+}
+.member-tabs button {
+  padding: 8px 9px;
+  font-size: 12px;
+  font-weight: 550;
+  border-bottom: 2px solid transparent;
+  color: var(--muted);
+}
+.member-tabs [aria-selected='true'] {
+  color: var(--green);
+  border-bottom-color: var(--green);
+}
+#member-chat,
+#office-messages {
+  display: flex;
+  min-height: 0;
+  flex: 1;
+  flex-direction: column;
+}
+#member-files,
+#member-settings,
+#member-project {
+  min-height: 0;
+  flex: 1;
+  overflow: auto;
+  overscroll-behavior: contain;
+}
+#member-files {
+  padding: 14px 16px;
+}
+#agent-files h2,
+#member-deliveries h3 {
+  margin: 3px 0 8px;
+  font-size: 14px;
+}
+#agent-files header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+#agent-files header button,
+#member-deliveries button {
+  color: var(--green);
+  font-size: 12px;
+}
+#member-deliveries > button {
+  display: block;
+  padding: 8px 0;
+  text-align: left;
+}
+#member-deliveries {
+  margin-block: 14px;
+}
+#member-settings {
+  padding: 12px 15px;
+}
+.project-switch {
+  display: flex;
+  align-items: center;
+  flex: none;
+  padding: 5px 14px 0;
+}
+.project-switch button,
+.create-navigation button {
+  padding: 4px 9px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  color: var(--green);
+  font-size: 12px;
+}
+.create-navigation {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 14px 0;
+}
+.unified-office .connection-note {
+  padding-inline: 16px;
+  font-size: 10px;
+}
+.unified-office .composer-area {
+  padding-inline: 14px;
+}
+.unified-office .message-log {
+  padding-inline: 16px;
+}
+.unified-office .composer-tools {
+  gap: 5px;
+}
+.unified-office .composer-tools select {
+  min-width: 0;
+}
+@media (max-width: 760px) {
+  .unified-office {
+    --studio-height: 42px;
+  }
+  .unified-office .studio-bar {
+    padding-inline: 10px;
+  }
+  .unified-office .workbench {
+    height: calc(100dvh - var(--studio-height));
+    min-height: 0;
+    display: flex;
+  }
+  .unified-office .visual-panel {
+    flex: 0 0 clamp(148px, 27dvh, 232px);
+    padding: 3px 6px;
+    gap: 3px;
+    display: grid;
+    grid-template-rows: minmax(0, 1fr) auto;
+  }
+  .unified-office .office-heading {
+    min-height: 24px;
+    padding: 3px 9px;
+  }
+  .unified-office .office-heading h2 {
+    font-size: 12px;
+  }
+  .unified-office .office-caption,
+  .unified-office .work-strip:not(:empty) {
+    display: none;
+  }
+  .unified-office .office-live {
+    height: auto;
+  }
+  .unified-office .workbench:not(.visual-overlay) .visual-results {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    min-width: 0;
+    min-height: 30px;
+  }
+  .unified-office .workbench:not(.visual-overlay) .visual-head {
+    padding: 1px 7px;
+    flex-shrink: 0;
+  }
+  .unified-office .workbench:not(.visual-overlay) .visual-head :is(.result-mark, #expand-results) {
+    display: none;
+  }
+  .unified-office .workbench:not(.visual-overlay) #panel-results {
+    min-width: 0;
+    flex: 1;
+    padding: 0 4px !important;
+  }
+  .unified-office .visual-picker button {
+    min-height: 24px;
+  }
+  .unified-office #result-empty {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .unified-office .visual-overlay .visual-results {
+    display: flex;
+    position: fixed;
+    inset: var(--studio-height) 0 0;
+  }
+  .unified-office .team-directory {
+    padding: 3px 10px;
+  }
+  .unified-office .conversation-head {
+    min-height: 40px;
+    padding: 5px 10px;
+  }
+  .unified-office .conversation-head h1 {
+    font-size: 15px;
+  }
+  .member-tabs {
+    padding-inline: 8px;
+  }
+  .member-tabs button {
+    padding-block: 6px;
+  }
+  .unified-office .message-log,
+  .unified-office .composer-area {
+    padding-inline: 10px;
+  }
+  .unified-office .workbench.visual-overlay #conversation {
+    display: none;
+  }
+}
+/* Keep a small team visible together; larger rosters scroll vertically and remain searchable. */
+.unified-office .conversation-switcher {
+  display: flex;
+  flex-wrap: wrap;
+  max-height: 88px;
+  overflow-x: hidden;
+  overflow-y: auto;
+  gap: 4px;
+}
+.unified-office .conversation-switcher > nav {
+  display: contents;
+}
+.unified-office .conversation-row {
+  min-width: 0;
+  max-width: 130px;
+  padding: 3px 6px;
+  gap: 4px;
+}
+.unified-office .conversation-row .avatar {
+  width: 18px;
+  height: 18px;
+  border-radius: 5px;
+  font-size: 10px;
+}
+.unified-office .conversation-row small {
+  margin-top: 1px;
+}
+.unified-office .group-row {
+  position: static;
+}
+.unified-office .group-mark {
+  width: 15px;
+  font-size: 15px;
+}

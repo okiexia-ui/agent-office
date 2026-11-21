@@ -13,8 +13,8 @@ const normalizeCase = value =>
 const overlaps = (a, b) => isInside(normalizeCase(a), normalizeCase(b)) || isInside(normalizeCase(b), normalizeCase(a));
 const isInside = (child, parent) => child === parent || child.startsWith(parent + path.sep);
 
-function summary({id, title, projectPath, updatedAt, status}) {
-  return {id, title, projectPath, updatedAt, status};
+function summary({id, agentId = 'pi-local', title, projectPath, updatedAt, status}) {
+  return {id, agentId, title, projectPath, updatedAt, status};
 }
 function requestKey(id, required) {
   if (id == null && !required) return null;
@@ -82,7 +82,15 @@ async function activity(journal) {
 }
 
 const STOPPED_WITH_CHANGES = '已停止本轮。已写入的文件改动可在下方查看。';
-export async function openProjectSessions({dir, localAvailable, localStatus, generate}) {
+export async function openProjectSessions({
+  dir,
+  localAvailable,
+  localStatus,
+  generate,
+  officeCall,
+  resolveMember = id =>
+    id === 'pi-local' ? {id, name: 'Pi（本机）', kind: 'pi', available: localAvailable(), enabled: true} : null
+}) {
   await fs.mkdir(dir, {recursive: true, mode: 0o700});
   const stateDir = await fs.realpath(path.dirname(dir));
   const sessions = new Map();
@@ -151,7 +159,8 @@ export async function openProjectSessions({dir, localAvailable, localStatus, gen
     if (!/^[a-f\d-]{36}\.json$/.test(name)) continue;
     const s = JSON.parse(await fs.readFile(path.join(dir, name), 'utf8'));
     if (s.id + '.json' !== name || !Array.isArray(s.turns)) throw new Error('项目会话文件无效。');
-    if (s.status === 'running')
+    s.agentId ??= 'pi-local';
+    if (s.status === 'running' && s.turns.at(-1)?.kind !== 'external')
       await finish(s, s.turns.at(-1), {status: 'stopped', error: '上次运行因本地服务退出而中断，可以继续当前会话。'});
     else sessions.set(s.id, s);
   }
@@ -164,7 +173,7 @@ export async function openProjectSessions({dir, localAvailable, localStatus, gen
   async function detail(s) {
     const last = s.turns.at(-1);
     const turns =
-      s.status === 'running'
+      s.status === 'running' && last?.kind !== 'external'
         ? [...s.turns.slice(0, -1), {...last, activity: await activity(journalFor(last))}]
         : s.turns;
     return {...summary(s), turns};
@@ -172,35 +181,39 @@ export async function openProjectSessions({dir, localAvailable, localStatus, gen
 
   async function create(form) {
     const requestId = requestKey(form.requestId, false);
+    const agentId = form.agentId ?? 'pi-local';
+    if (typeof agentId !== 'string' || !/^[\w-]{1,64}$/.test(agentId) || !(await resolveMember(agentId)))
+      throw new StudioError('找不到要分配的成员。', 404);
     const folder = await projectFolder(form.projectPath, stateDir);
     if (form.title != null && (typeof form.title !== 'string' || form.title.length > 100))
       throw new StudioError('会话标题最多 100 个字符。');
     const title = form.title?.trim() || path.basename(folder.projectPath);
     const previous = requestId && [...sessions.values()].find(s => s.requestId === requestId);
     if (previous) {
-      if (previous.projectPath !== folder.projectPath || previous.title !== title)
+      if (previous.agentId !== agentId || previous.projectPath !== folder.projectPath || previous.title !== title)
         throw new StudioError('同一请求标识对应的会话内容不同。', 409);
       return json({session: await detail(previous)});
     }
-    const s = {id: randomUUID(), requestId, title, ...folder, updatedAt: now(), status: 'idle', turns: []};
+    const s = {id: randomUUID(), agentId, requestId, title, ...folder, updatedAt: now(), status: 'idle', turns: []};
     await save(s);
     return json({session: await detail(s)}, 201);
   }
 
-  async function execute(s, turn, controller) {
+  async function execute(s, turn, controller, member) {
     let result;
     try {
       const reply = await generate(promptFor(s.turns), {
         signal: controller.signal,
+        member,
         project: {projectPath: s.projectPath, identity: s.identity, journal: journalFor(turn)}
       });
       controller.signal.throwIfAborted();
-      if (!reply?.trim()) throw new Error('Pi 返回了空回复。');
+      if (!reply?.trim()) throw new Error('成员返回了空回复。');
       result = {status: 'done', reply: reply.trim().slice(0, 48000)};
     } catch (error) {
       result = controller.signal.aborted
         ? {status: 'stopped', error: STOPPED_WITH_CHANGES}
-        : {status: 'failed', error: error.message || 'Pi 运行失败。'};
+        : {status: 'failed', error: error.message || '成员运行失败。'};
     }
     try {
       await enqueue(async () => {
@@ -228,7 +241,7 @@ export async function openProjectSessions({dir, localAvailable, localStatus, gen
   }
 
   function busy(projectPath) {
-    return [...running.keys()].some(id => overlaps(findSession(id).projectPath, projectPath));
+    return [...sessions.values()].some(s => s.status === 'running' && overlaps(s.projectPath, projectPath));
   }
   async function send(id, form) {
     const s = findSession(id);
@@ -241,7 +254,12 @@ export async function openProjectSessions({dir, localAvailable, localStatus, gen
       if (previous.prompt !== prompt) throw new StudioError('同一请求标识对应的消息内容不同。', 409);
       return json({session: await detail(s)});
     }
-    if (!localAvailable()) throw new StudioError('本机 Pi 模型尚未就绪。请检查本地模型服务。', 503);
+    const member = await resolveMember(s.agentId);
+    if (!member) throw new StudioError('此成员已离开办公室。', 404);
+    if (member.enabled === false) throw new StudioError('此成员已停用，请在设置中启用后继续。', 409);
+    if (!member.available) throw new StudioError('成员的模型尚未就绪，请检查模型设置。', 503);
+    if ([...sessions.values()].some(other => other.agentId === s.agentId && other.status === 'running'))
+      throw new StudioError('此成员正在执行另一项项目任务。', 409);
     if (busy(s.projectPath) || checks.isRunning(s.projectPath))
       throw new StudioError('这个项目正在运行任务。请等待完成或先停止。', 409);
     const folder = await projectFolder(s.projectPath, stateDir);
@@ -250,6 +268,8 @@ export async function openProjectSessions({dir, localAvailable, localStatus, gen
     const turn = {
       id: randomUUID(),
       requestId,
+      kind: member.kind,
+      agentName: member.name,
       prompt,
       status: 'running',
       startedAt: now(),
@@ -260,16 +280,140 @@ export async function openProjectSessions({dir, localAvailable, localStatus, gen
       changes: []
     };
     const updated = {...s, status: 'running', updatedAt: turn.startedAt, turns: [...s.turns, turn]};
-    await fs.mkdir(journalFor(turn), {mode: 0o700});
+    if (member.kind !== 'external') await fs.mkdir(journalFor(turn), {mode: 0o700});
     await save(updated);
+    if (member.kind === 'external') {
+      await syncExternal(updated);
+      return json({session: await detail(findSession(id))}, 202);
+    }
     const controller = new AbortController();
-    const job = {controller, promise: execute(updated, turn, controller)};
+    const job = {controller, promise: execute(updated, turn, controller, member)};
     running.set(id, job);
     job.promise.catch(error => console.error('无法保存项目运行结果：' + error.message));
     return json({session: await detail(updated)}, 202);
   }
 
+  function externalTask(s) {
+    return s.status === 'running' && s.turns.at(-1)?.kind === 'external';
+  }
+  async function syncExternal(s, stop = false) {
+    const turn = s.turns.at(-1);
+    if (!externalTask(s)) return;
+    const owner = {agent_id: s.agentId};
+    let task;
+    // A queued turn is saved before publishing. The same request id recovers a
+    // lost create response or a crash without handing out the work twice.
+    if (!turn.taskId && !stop) {
+      try {
+        ({task} = await officeCall('office_create_task', {
+          ...owner,
+          request_id: turn.id,
+          title: s.title.slice(0, 80),
+          description:
+            ('项目：' + path.basename(s.projectPath)).slice(0, 250) +
+            '。领取后请查看 project.request，通过 office_report_step 汇报步骤，通过 office_update_task 提交实际结果。'
+        }));
+      } catch (error) {
+        // Recover a lost acknowledgement before declaring a rejected dispatch.
+        const {tasks} = await officeCall('office_list_tasks', owner);
+        task = tasks.find(row => row.requestId === turn.id);
+        if (!task) {
+          const failed = {...turn, status: 'failed', error: '任务未分配：' + error.message, finishedAt: now()};
+          await save({...s, status: 'idle', updatedAt: now(), turns: [...s.turns.slice(0, -1), failed]});
+          return;
+        }
+      }
+    } else {
+      const list = await officeCall('office_list_tasks', owner);
+      task = list.tasks.find(t => (turn.taskId ? t.id === turn.taskId : t.requestId === turn.id));
+    }
+    const taskId = task?.id || turn.taskId;
+    if (stop && task && ['queued', 'active'].includes(task.status)) {
+      ({task} = await officeCall('office_update_task', {
+        ...owner,
+        task_id: task.id,
+        expected_status: task.status,
+        status: 'paused'
+      }));
+    }
+    const {steps} = task ? await officeCall('office_get_steps', {...owner, task_id: taskId}) : {steps: []};
+    const activity = steps.map(step => ({operation: 'report', path: step.title, status: step.status}));
+    const status = task?.status === 'done' ? 'done' : !task || task.status === 'paused' ? 'stopped' : 'running';
+    const updatedTurn = {
+      ...turn,
+      taskId,
+      status,
+      dispatchStatus: task?.status || 'removed',
+      activity,
+      reply: status === 'done' ? task.result || '外部成员已标记完成。' : '',
+      error: status === 'stopped' ? task?.result || '办公室任务已暂停或移除。外部程序管理自己的执行过程。' : '',
+      finishedAt: status === 'running' ? null : now()
+    };
+    if (JSON.stringify(updatedTurn) !== JSON.stringify(turn))
+      await save({
+        ...s,
+        updatedAt: now(),
+        status: status === 'running' ? 'running' : 'idle',
+        turns: [...s.turns.slice(0, -1), updatedTurn]
+      });
+  }
+  async function refreshExternal(id) {
+    return enqueue(async () => {
+      const candidates = id ? [findSession(id)] : [...sessions.values()];
+      for (const s of candidates.filter(externalTask)) {
+        try {
+          await syncExternal(s);
+        } catch {
+          // Keep a transient transport failure scoped to its external assignment.
+          // The durable receipt will be reconciled by the next poll.
+          if (id) throw new StudioError('暂时无法同步外部成员的任务，请稍后重试。', 503);
+        }
+      }
+    });
+  }
+  async function overview(s) {
+    const result = summary(s);
+    if (checks.runFor(s.id)?.status === 'running')
+      return {...result, progress: {step: 1, operation: 'test', path: 'npm test'}};
+    if (s.status !== 'running') return {...result, progress: null};
+    const turn = s.turns.at(-1);
+    const events = externalTask(s) ? turn.activity : await activity(journalFor(turn));
+    return {
+      ...result,
+      progress: {
+        step: events.length,
+        ...(events.at(-1) ?? {
+          operation: externalTask(s) ? (turn.dispatchStatus === 'active' ? 'claimed' : 'queued') : 'thinking',
+          path: ''
+        })
+      }
+    };
+  }
+  async function stopSession(id) {
+    const job = await enqueue(async () => {
+      const s = findSession(id);
+      if (externalTask(s)) await syncExternal(s, true);
+      const job = running.get(id);
+      job?.controller.abort();
+      return job;
+    });
+    await job?.promise;
+  }
   return {
+    briefForTask(taskId, agentId) {
+      const session = [...sessions.values()].find(
+        s => s.agentId === agentId && externalTask(s) && 'task_' + s.turns.at(-1).id === taskId
+      );
+      if (!session) return null;
+      return {
+        directory: session.projectPath,
+        request: session.turns.at(-1).prompt,
+        conversation: promptFor(session.turns)
+      };
+    },
+    async stopAgent(id) {
+      for (const s of sessions.values()) if (s.agentId === id && s.status === 'running') await stopSession(s.id);
+    },
     async fetch(request) {
       const url = new URL(request.url);
       try {
@@ -298,24 +442,35 @@ export async function openProjectSessions({dir, localAvailable, localStatus, gen
           });
         }
         if (request.method === 'GET' && !action) {
+          await refreshExternal(id);
           if (id) return json({session: await detail(findSession(id))});
+          const selected = url.searchParams.get('agentId');
+          const member = selected && (await resolveMember(selected));
+          const visible = [...sessions.values()].filter(s => !selected || s.agentId === selected);
+          const rows = await Promise.all(visible.map(overview));
           return json({
             localAvailable: localAvailable(),
             localStatus: localStatus?.() ?? {state: localAvailable() ? 'ready' : 'off'},
-            sessions: [...sessions.values()].map(summary).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
+            ...(selected && {
+              member: member
+                ? {
+                    id: member.id,
+                    name: member.name,
+                    kind: member.kind,
+                    enabled: member.enabled,
+                    available: member.available,
+                    modelLabel: member.connection?.name || ''
+                  }
+                : null
+            }),
+            sessions: rows.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
           });
         }
         if (request.method !== 'POST' || (id && !action)) throw new StudioError('不支持此请求方法。', 405);
         const form = await readForm(request, 65536);
         if (!id) return await enqueue(() => create(form));
         if (action === 'messages') return await enqueue(() => send(id, form));
-        const job = await enqueue(() => {
-          findSession(id);
-          const job = running.get(id);
-          job?.controller.abort();
-          return job;
-        });
-        await job?.promise;
+        await stopSession(id);
         return json({session: await detail(findSession(id))});
       } catch (error) {
         if (error instanceof StudioError) return json({error: error.message}, error.status);

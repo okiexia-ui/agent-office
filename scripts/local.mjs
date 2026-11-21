@@ -11,7 +11,7 @@ import {preparePiModel} from './pi-model.mjs';
 import {runOfficePi} from './pi-office.mjs';
 import {openAgentStudio} from './agent-studio.mjs';
 import {openProjectSessions} from './project-sessions.mjs';
-import {generateApi} from './studio-provider.mjs';
+import {generateApi, generateApiProject} from './studio-provider.mjs';
 import {createPiFiles} from './pi-files.mjs';
 
 const root = path.resolve(import.meta.dirname, '..');
@@ -125,7 +125,7 @@ async function runningWork(origin) {
     sessions = 0;
   if (projects) {
     const list = await (await projects.fetch(new Request(origin + '/api/studio/projects'))).json();
-    sessions = (list.sessions || []).filter(s => s.status === 'running').length;
+    sessions = (list.sessions || []).filter(s => s.status === 'running' || s.progress?.operation === 'test').length;
   }
   if (call) {
     const {tasks: active = []} = await call('office_list_tasks', {status: 'active'});
@@ -158,10 +158,13 @@ async function startAgent(profile, connection, onStopped = () => {}) {
   const signals = [signal, lifetime.signal];
   if (!connection && model.stopped) signals.push(model.stopped);
   const agentSignal = AbortSignal.any(signals);
-  const instructions =
-    profile.id === 'pi-local'
-      ? ''
-      : ['你是' + profile.name + '。你的职责是' + profile.role + '。', profile.instructions].filter(Boolean).join('\n');
+  function instructions() {
+    if (profile.id === 'pi-local' && !studio) return '';
+    const current = profile.id === 'pi-local' ? studio.builtin() : profile;
+    return ['你是' + current.name + '。你的职责是' + current.role + '。', current.instructions]
+      .filter(Boolean)
+      .join('\n');
+  }
   const avatar = connection ? 'API' : 'Pi';
   const workspace = !connection && files ? await files.rootFor(profile.id) : undefined;
   const ready = Promise.withResolvers();
@@ -179,10 +182,10 @@ async function startAgent(profile, connection, onStopped = () => {}) {
     onReady: ready.resolve,
     generate: (prompt, {signal, useWorkspace, request}) =>
       connection
-        ? generateApi(connection, prompt, {signal, instructions})
+        ? generateApi(connection, prompt, {signal, instructions: instructions()})
         : generatePi(prompt, {
             signal,
-            instructions,
+            instructions: instructions(),
             env: model.env,
             workspace: useWorkspace ? workspace : undefined,
             allowHostRead: useWorkspace,
@@ -238,6 +241,9 @@ try {
     studio = await openAgentStudio({
       dir: path.join(stateDir, 'studio'),
       startAgent,
+      localRole: () => (model ? ('本机 Pi · ' + model.modelName).slice(0, 80) : '本机 Pi 助手'),
+      stopProjects: id => projects?.stopAgent(id),
+      updateMember: (id, fields) => office.setMemberProfile(id, fields),
       markOffline: (id, profile) =>
         office.setAgentEnabled(id, false, {
           name: profile.name,
@@ -252,12 +258,51 @@ try {
       dir: path.join(stateDir, 'projects'),
       localAvailable,
       localStatus,
-      generate: (prompt, {signal: turnSignal, project}) =>
-        generatePi(prompt, {
+      async resolveMember(id) {
+        const managed = await studio.projectAgent(id);
+        if (managed) {
+          const kind = managed.connectionId === 'local' ? 'pi' : 'api';
+          return {
+            ...managed,
+            kind,
+            available: managed.enabled !== false && (kind === 'pi' ? localAvailable() : Boolean(managed.connection))
+          };
+        }
+        if (!call) return null;
+        const {agents} = await call('office_get_state', {});
+        const member = agents.find(a => a.id === id);
+        return (
+          member && {
+            id,
+            name: member.name,
+            kind: 'external',
+            enabled: !member.managedDisabled,
+            available: !member.managedDisabled
+          }
+        );
+      },
+      officeCall: (name, args) => call(name, args),
+      generate: (prompt, {signal: turnSignal, project, member}) => {
+        const instructions = [
+          member.name && '你是' + member.name + '。',
+          member.role && '职责：' + member.role,
+          member.instructions
+        ]
+          .filter(Boolean)
+          .join('\n');
+        if (member.kind === 'api')
+          return generateApiProject(member.connection, prompt, {
+            signal: AbortSignal.any([turnSignal, signal]),
+            project,
+            instructions
+          });
+        return generatePi(prompt, {
           signal: AbortSignal.any([turnSignal, signal, ...(model.stopped ? [model.stopped] : [])]),
           project,
+          instructions,
           env: model.env
-        })
+        });
+      }
     });
   office = await startOfficeServer({
     stateDir,
@@ -283,6 +328,10 @@ try {
     const reply = await rpc('tools/call', {name, arguments: args});
     return reply.structuredContent ?? JSON.parse(reply.content[0].text);
   };
+  if (studio && (piConfigured || studio.hasBuiltinSettings())) {
+    // A configured but still loading (or offline) model has an editable seat.
+    await studio.syncBuiltin({starting: true}).catch(error => console.error(error.message));
+  }
   // Restore disabled seats and API runners before potentially loading a large GGUF.
   await studio?.restore({deferLocal: true});
   if (env.OFFICE_MODEL_FILE || env.OFFICE_MODEL_URL || shared) {
@@ -290,18 +339,16 @@ try {
       const version = await preflightPi({env, signal});
       console.log('正在连接本机模型…');
       model = await preparePiModel({env, runtimeDir, signal});
-      stopPi = await startAgent(
-        {
-          id: 'pi-local',
-          name: 'Pi（本机）',
-          role: ('本机 Pi · ' + model.modelName).slice(0, 80)
-        },
-        null,
-        error => {
-          console.error(error.message);
-          if (shared) controller.abort();
-        }
-      );
+      await studio?.syncBuiltin();
+      const builtin = studio?.builtin() || {
+        id: 'pi-local',
+        name: 'Pi（本机）',
+        role: ('本机 Pi · ' + model.modelName).slice(0, 80)
+      };
+      stopPi = await startAgent(builtin, null, error => {
+        console.error(error.message);
+        if (shared) controller.abort();
+      });
       console.log(`Pi ${version} · ${model.modelName}`);
     } catch (error) {
       if (shared || signal.aborted) throw error;

@@ -198,3 +198,144 @@ test('restart seals an interrupted run, recovers its real changes and keeps the 
   assert.equal(replay.status, 200);
   assert.equal((await replay.json()).session.turns.length, 1);
 });
+
+test('API project runs use the selected connection and room instructions, retain ownership, and only edit scoped files', async t => {
+  const {dir, root} = await temp(t);
+  const {generateApiProject} = await import('../scripts/studio-provider.mjs');
+  const member = {
+    id: 'api-editor',
+    kind: 'api',
+    name: '修订员',
+    instructions: '每次只改一个文件',
+    enabled: true,
+    available: true,
+    connection: {
+      baseUrl: 'https://model.example/v1',
+      model: 'project-model',
+      apiKey: 'fixture-local-only',
+      name: '测试连接'
+    }
+  };
+  const calls = [];
+  const send = async (url, options) => {
+    const body = JSON.parse(options.body);
+    calls.push(body);
+    assert.equal(url, 'https://model.example/v1/chat/completions');
+    assert.deepEqual(
+      body.tools.map(t => t.function.name),
+      ['office_project']
+    );
+    const message =
+      calls.length === 1
+        ? {
+            role: 'assistant',
+            tool_calls: [
+              {
+                id: 'first',
+                type: 'function',
+                function: {
+                  name: 'office_project',
+                  arguments: JSON.stringify({operation: 'write', path: 'hello.md', text: 'Hello from API'})
+                }
+              }
+            ]
+          }
+        : {role: 'assistant', content: '已写入 hello.md'};
+    return Response.json({choices: [{message}]});
+  };
+  const options = {
+    dir,
+    localAvailable: () => false,
+    resolveMember: id => (id === member.id ? member : null),
+    generate: (prompt, {member, signal, project}) =>
+      generateApiProject(member.connection, prompt, {instructions: member.instructions, signal, project, send})
+  };
+  const api = await openProjectSessions(options);
+  t.after(() => api.close());
+  const {session} = await (await request(api, '', 'POST', {projectPath: root, agentId: member.id})).json();
+  const sent = await request(api, '/' + session.id + '/messages', 'POST', {
+    content: '写一行文字',
+    requestId: 'api-turn'
+  });
+  assert.equal(sent.status, 202);
+  const final = await idle(api, session.id);
+  assert.equal(final.agentId, 'api-editor');
+  assert.equal(final.turns[0].agentName, '修订员');
+  assert.equal(await fs.readFile(path.join(root, 'hello.md'), 'utf8'), 'Hello from API');
+  assert.match(final.turns[0].changes[0].diff, /\+Hello from API/);
+  assert.equal(calls[0].model, 'project-model');
+  assert.match(calls[0].messages[0].content, /每次只改一个文件/);
+  assert.equal(calls[1].messages.at(-1).tool_call_id, 'first');
+  const index = await (await request(api, '?agentId=api-editor')).json();
+  assert.equal(index.sessions.length, 1);
+  assert.equal(index.member.modelLabel, '测试连接');
+  assert.ok(!JSON.stringify(index).includes('fixture-local-only'));
+  const other = await (await request(api, '?agentId=pi-local')).json();
+  assert.deepEqual(other.sessions, []);
+  member.enabled = false;
+  assert.equal(
+    (await request(api, '/' + session.id + '/messages', 'POST', {content: '再改一个文件', requestId: 'disabled'}))
+      .status,
+    409
+  );
+});
+
+test('an external project can be claimed through MCP, report a real step, survive office restart, and return its own result', async t => {
+  const {dir, root} = await temp(t);
+  const {MemoryBucket} = await import('./memory-bucket.mjs');
+  const {callTool} = await import('../worker/index.js');
+  const env = {BUCKET: new MemoryBucket(), OFFICE_LOCAL: true, PI_OFFICE: true};
+  const officeCall = (tool, args) => callTool(tool, args, env);
+  const agentId = 'external-editor';
+  await officeCall('office_register_agent', {agent_id: agentId, name: '外部编辑', role: '编辑', model: 'Codex'});
+  const options = {
+    dir,
+    localAvailable: () => false,
+    officeCall,
+    resolveMember: id =>
+      id === agentId ? {id: agentId, kind: 'external', enabled: true, available: true, name: '外部编辑'} : null,
+    generate: () => assert.fail('must never run the external agent as Pi')
+  };
+  let api = await openProjectSessions(options);
+  env.OFFICE_PROJECT_BRIEF = (id, member) => api.briefForTask(id, member);
+  t.after(() => api.close());
+  const {session} = await (await request(api, '', 'POST', {agentId, projectPath: root, title: '外部项目'})).json();
+  const prompt = '请检查这个项目的 README。'.repeat(60);
+  const {session: started} = await (
+    await request(api, '/' + session.id + '/messages', 'POST', {content: prompt, requestId: 'external-turn'})
+  ).json();
+  assert.equal(started.turns[0].dispatchStatus, 'queued');
+  const {task, project} = await officeCall('office_claim_task', {agent_id: agentId});
+  assert.equal(project.directory, root);
+  assert.equal(project.request, prompt);
+  assert.equal(api.briefForTask(task.id, 'different-agent'), null);
+  await officeCall('office_report_step', {
+    agent_id: agentId,
+    task_id: task.id,
+    request_id: 'started',
+    title: '阅读 README.md',
+    status: 'started'
+  });
+  let index = await (await request(api, '')).json();
+  assert.equal(index.sessions[0].progress.path, '阅读 README.md');
+  assert.equal(index.sessions[0].progress.step, 1);
+  await api.close();
+  api = await openProjectSessions(options);
+  assert.equal((await officeCall('office_list_tasks', {agent_id: agentId})).tasks.length, 1);
+  await officeCall('office_update_task', {
+    agent_id: agentId,
+    task_id: task.id,
+    status: 'done',
+    result: '检查完成，安装命令有效。'
+  });
+  const {session: finished} = await (await request(api, '/' + session.id)).json();
+  assert.equal(finished.status, 'idle');
+  assert.equal(finished.turns[0].reply, '检查完成，安装命令有效。');
+  assert.deepEqual(finished.turns[0].changes, []);
+  await request(api, '/' + session.id + '/messages', 'POST', {content: '下一项', requestId: 'next'});
+  await api.stopAgent(agentId);
+  index = await (await request(api, '')).json();
+  assert.equal(index.sessions[0].progress, null);
+  const {tasks} = await officeCall('office_list_tasks', {agent_id: agentId});
+  assert.equal(tasks.find(t => t.status !== 'done')?.status, 'paused');
+});

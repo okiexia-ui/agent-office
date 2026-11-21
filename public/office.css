@@ -804,7 +804,7 @@ body.embedded-office {
 
 /* Tiny stages: names collapse to colour dots so a whole team still fits. The selected
    person keeps their name, and every label keeps its accessible name for screen readers. */
-.embedded-office.tiny-stage .agent-label:not(.hotspot-label):not(.selected) {
+.embedded-office.tiny-stage .agent-label:not(.hotspot-label):not(.selected):not(.has-activity) {
   width: 20px;
   height: 20px;
   padding: 0;
@@ -812,10 +812,12 @@ body.embedded-office {
   justify-content: center;
   border-radius: 50%;
 }
-.embedded-office.tiny-stage .agent-label:not(.hotspot-label):not(.selected) > span:not(.label-color) {
+.embedded-office.tiny-stage
+  .agent-label:not(.hotspot-label):not(.selected):not(.has-activity)
+  > span:not(.label-color) {
   display: none;
 }
-.embedded-office.tiny-stage .agent-label:not(.hotspot-label):not(.selected) .label-color {
+.embedded-office.tiny-stage .agent-label:not(.hotspot-label):not(.selected):not(.has-activity) .label-color {
   width: 10px;
   height: 10px;
   border-radius: 50%;
@@ -823,4 +825,29 @@ body.embedded-office {
 .embedded-office.tiny-stage .hotspot-label {
   width: 20px;
   height: 20px;
+}
+
+.embedded-office .label-state {
+  font-size: 10px;
+  font-weight: 450;
+  opacity: 0.78;
+}
+.embedded-office .agent-label.has-activity {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  height: auto;
+  max-width: min(215px, 58vw);
+  row-gap: 1px;
+  padding: 5px 9px;
+  border-radius: 10px;
+}
+.label-progress {
+  grid-column: 1 / -1;
+  display: block;
+  font-size: 10px;
+  font-weight: 500;
+  color: inherit;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }

@@ -139,6 +139,7 @@ export function createProjectChecks({timeout = 120000} = {}) {
   }
   return {
     isRunning,
+    runFor: id => records.get(id)?.run,
     async fetch(request, session) {
       const {id, projectPath, status} = session;
       const stop = new URL(request.url).pathname.endsWith('/stop');

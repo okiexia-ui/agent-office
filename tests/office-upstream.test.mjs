@@ -245,3 +245,85 @@ test('studio disable and re-enable reconcile browser state, roster, chat, tasks 
     'done'
   );
 });
+
+test('local member settings persist, guide external MCP reconnects and keep Pi instructions private', async t => {
+  const dir = await mkdtemp(path.join(os.tmpdir(), 'office-member-settings-'));
+  t.after(() => rm(dir, {recursive: true, force: true}));
+  let backend, studio;
+  const stopped = [];
+  const reopen = async () => {
+    await studio?.close();
+    studio = await openAgentStudio({
+      dir: path.join(dir, 'studio'),
+      localAvailable: () => false,
+      updateMember: (id, fields) => backend.setMemberProfile(id, fields),
+      stopProjects: id => stopped.push(id)
+    });
+    backend = await localBackend(createWorker(), dir, {OFFICE_PI_LOCAL: '1'}, req => studio.fetch(req), undefined, {
+      briefForTask: (task, member) =>
+        task === 'task_plan' && member === 'claude' ? {request: 'Inspect project'} : null
+    });
+  };
+  t.after(() => studio?.close());
+  await reopen();
+  const change = (id, fields) => backend.fetch(write('/api/studio/members/' + id, fields, {}, 'PUT'));
+  const rpc = async (name, args) => {
+    const res = await (
+      await backend.fetch(write('/mcp', {jsonrpc: '2.0', id: 1, method: 'tools/call', params: {name, arguments: args}}))
+    ).json();
+    if (res.result.isError) throw Error(res.result.content[0].text);
+    return res.result.structuredContent;
+  };
+  const pi = {name: '助手', role: '处理项目', instructions: 'private-pi-policy'};
+  assert.equal((await change('pi-local', pi)).status, 200);
+  await reopen();
+  assert.equal(studio.projectAgent('pi-local').instructions, pi.instructions);
+  await studio.syncBuiltin();
+  const state = () => rpc('office_get_state', {});
+  assert.ok(!JSON.stringify(await state()).includes(pi.instructions));
+  assert.equal((await state()).agents[0].name, pi.name);
+  const reg = {agent_id: 'claude', name: 'CLI', role: 'remote role', model: 'Claude'};
+  await rpc('office_register_agent', reg);
+  const form = {
+    name: '评审',
+    role: '复核改动',
+    color: '#778899',
+    seatId: 'desk-11',
+    enabled: true,
+    officeNotes: '注明验证依据'
+  };
+  assert.equal((await change('claude', {...form, seatId: 'desk-01'})).status, 409);
+  assert.equal((await change('claude', {...form, model: 'Gemini'})).status, 400);
+  assert.equal((await change('claude', form)).status, 200);
+  await reopen();
+  const {agent} = await rpc('office_register_agent', reg);
+  for (const key of ['name', 'role', 'color', 'seatId', 'officeNotes']) assert.equal(agent[key], form[key]);
+  assert.equal((await rpc('office_heartbeat', {agent_id: 'claude'})).agent.officeNotes, form.officeNotes);
+  const before = await state();
+  const stale = {
+    ...before,
+    agents: before.agents.map(a =>
+      a.id === 'claude' ? {...a, name: 'Old Name', seatId: 'desk-14', officeNotes: 'ignored'} : a
+    )
+  };
+  assert.equal((await backend.fetch(write('/api/state', stale, {}, 'PUT'))).status, 200);
+  const {task} = await rpc('office_create_task', {agent_id: 'claude', title: '协作任务', request_id: 'plan'});
+  const claim = await rpc('office_claim_task', {agent_id: 'claude'});
+  assert.equal(claim.task.id, task.id);
+  assert.equal(claim.project.request, 'Inspect project');
+  await rpc('office_create_task', {agent_id: 'claude', title: '待认领任务', request_id: 'queued'});
+  assert.equal((await change('claude', {...form, enabled: false})).status, 200);
+  assert.deepEqual(stopped, ['claude']);
+  await reopen();
+  const after = await state();
+  assert.equal(after.agents.find(a => a.id === 'claude').name, form.name);
+  assert.equal(after.agents.find(a => a.id === 'claude').seatId, form.seatId);
+  assert.deepEqual(
+    after.tasks.map(t => t.status),
+    ['paused', 'paused']
+  );
+  for (const tool of ['office_claim_task', 'office_heartbeat', 'office_register_agent'])
+    await assert.rejects(rpc(tool, {agent_id: 'claude'}), /停用/);
+  assert.equal((await change('claude', form)).status, 200);
+  assert.equal((await rpc('office_register_agent', reg)).agent.name, form.name);
+});

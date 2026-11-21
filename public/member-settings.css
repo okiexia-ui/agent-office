@@ -1,0 +1,175 @@
+.member-settings {
+  display: grid;
+  align-content: start;
+  gap: 12px;
+  padding: 16px 18px 24px;
+  color: var(--ink);
+  min-width: 0;
+}
+.member-settings [hidden] {
+  display: none !important;
+}
+.member-settings fieldset:has(#studio-connection-form:not([hidden])) > .member-actions {
+  display: none;
+}
+.member-settings fieldset,
+.member-settings form,
+#studio-external-controls,
+#studio-source {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+}
+.member-settings fieldset {
+  padding: 0;
+  border: 0;
+  margin: 0;
+  gap: 16px;
+}
+.member-settings h3,
+.member-settings p {
+  margin: 0;
+}
+.member-settings label,
+.member-field-title {
+  display: grid;
+  gap: 5px;
+  color: var(--ink);
+  font-size: 12px;
+  font-weight: 600;
+}
+.member-settings :is(input, textarea, select) {
+  min-width: 0;
+  max-width: 100%;
+  width: 100%;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: var(--surface);
+  color: var(--ink);
+  font: inherit;
+  font-size: 14px;
+  font-weight: 400;
+  padding: 8px 10px;
+}
+.member-settings textarea {
+  resize: vertical;
+}
+.member-settings button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 6px 10px;
+  min-height: 32px;
+  font-size: 12px;
+  font-weight: 600;
+  background: var(--surface);
+  color: var(--green);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+}
+.member-settings :is(input, textarea, select, button):focus-visible {
+  outline: 2px solid var(--green);
+  outline-offset: 2px;
+}
+.member-settings button:hover:not(:disabled) {
+  background: var(--pale);
+}
+.member-settings button.member-primary {
+  background: var(--green);
+  color: var(--surface);
+  border-color: var(--green);
+}
+.member-settings button.member-primary:hover:not(:disabled) {
+  background: var(--green);
+  filter: brightness(1.07);
+}
+.member-type-line,
+.member-connection header,
+.member-actions,
+.member-model-row,
+.member-color {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  min-width: 0;
+}
+.member-type-line,
+.member-connection header {
+  justify-content: space-between;
+}
+.member-type-line {
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--line);
+  color: var(--muted);
+  font-size: 12px;
+}
+.member-type-line span:first-child {
+  color: var(--ink);
+  font-weight: 650;
+}
+.member-model-row select {
+  width: auto;
+  flex: 1 1 110px;
+}
+.member-model-row button {
+  flex: 0 0 auto;
+}
+.member-settings .member-hint,
+#studio-runtime-description,
+#studio-feedback {
+  font-size: 12px;
+  line-height: 1.55;
+  overflow-wrap: anywhere;
+}
+.member-settings .member-hint {
+  color: var(--muted);
+}
+#studio-edit-connection,
+.member-mcp {
+  justify-self: start;
+}
+.member-settings .member-check {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+.member-check input {
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  accent-color: var(--green);
+}
+.member-color {
+  align-items: end;
+}
+.member-color input {
+  padding: 2px;
+  height: 34px;
+  min-width: 54px;
+}
+.member-settings .member-connection {
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--bg);
+}
+.member-connection h3 {
+  font-size: 14px;
+}
+.member-settings .danger,
+.member-settings .studio-error {
+  color: #a13e2c;
+}
+body.night .member-settings .danger,
+body.night .member-settings .studio-error {
+  color: #f4a192;
+}
+#studio-remove-confirm {
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+}
+#studio-remove-confirm p {
+  margin-bottom: 8px;
+}

@@ -2,6 +2,7 @@ import {MODELS, initialState, validState} from './data.js';
 import {resultsForMessage, highlightedMessage} from './collaboration-view.js';
 import {mentionedAgents} from './channel.js';
 import {escapeHTML as esc, VISUAL_KINDS, visualBody, isolatedDocument, visualDownload} from './visual-renderer.js';
+import {createMemberPanel} from './member-panel.js';
 import {onLoopback, readLocalConfig} from './local-mode.js';
 const $ = selector => document.querySelector(selector);
 const demo = new URLSearchParams(location.search).get('demo') === '1';
@@ -33,16 +34,122 @@ let targets = new Set(),
   messageSignature = '',
   demoSaved = null;
 const frame = $('#office-frame');
+const initialLink = new URL(location.href);
+let profiles = [],
+  projectRuns = [],
+  projectRead = false,
+  refreshAgain = false;
+const people = () => [...state.agents, ...profiles.filter(p => !state.agents.some(a => a.id === p.id))];
+const currentAgent = () => people().find(a => a.id === current);
+const panel = createMemberPanel({
+  config: localConfig,
+  select: selectConversation,
+  refresh: async () => {
+    await loadProfiles();
+    syncTag = null;
+    await poll();
+  },
+  connect: () => $('#connect-dialog').showModal(),
+  prompt: appendFilePrompt,
+  openVisual: chooseVisual,
+  notify: toast
+});
+async function loadProfiles() {
+  if (!localConfig?.studio) return;
+  try {
+    const catalog = await api('/api/studio');
+    profiles = [...(catalog.agents || []), ...(catalog.builtin ? [catalog.builtin] : [])].map(p => ({
+      ...p,
+      model: p.connectionId === 'local' ? 'Pi' : 'API',
+      managedDisabled: p.enabled === false,
+      profileOnly: true
+    }));
+  } catch {
+    /* Previously read profiles can still be selected while reconnecting. */
+  }
+}
+function appendFilePrompt(prompt) {
+  const input = $('#composer-input');
+  const text = (input.value.trimEnd() ? input.value.trimEnd() + '\n' : '') + prompt;
+  if (text.length > input.maxLength) return toast('草稿已接近上限，缩短后再添加示例。');
+  input.value = text;
+  $('#delivery-kind').value = '';
+  saveDraft();
+  renderComposer();
+  input.focus();
+}
+const operationNames = {
+  thinking: '分析任务',
+  queued: '等待领取',
+  claimed: '已领取',
+  report: '汇报进度',
+  list: '查看目录',
+  read: '读取文件',
+  search: '搜索',
+  edit: '编辑',
+  write: '写入',
+  test: '运行测试'
+};
+function activityFor(a) {
+  const run = projectRuns.find(r => r.agentId === a.id);
+  if (run) {
+    const p = run.progress || {};
+    const project = run.projectPath?.split(/[/\\]/).filter(Boolean).pop() || run.title;
+    return {
+      id: run.id,
+      title: project,
+      step: p.step || 0,
+      detail: p.operation === 'report' && p.path ? p.path : operationNames[p.operation] || '处理任务',
+      waiting: p.operation === 'queued'
+    };
+  }
+  const task = state.tasks.find(t => t.agentId === a.id && t.status === 'active');
+  if (!task) return null;
+  const activity = steps.filter(s => s.taskId === task.id);
+  return {title: task.title, step: activity.length, detail: activity.at(-1)?.title || '执行中'};
+}
+async function loadProjectRuns() {
+  if (!localConfig?.workbench || document.hidden) return;
+  if (projectRead) {
+    refreshAgain = true;
+    return;
+  }
+  projectRead = true;
+  try {
+    const data = await api('/api/studio/projects');
+    projectRuns = data.sessions.filter(s => s.progress || s.status === 'running');
+  } catch {
+    projectRuns = [];
+  } finally {
+    projectRead = false;
+    sendOfficeState();
+    renderOfficeContext();
+    renderSidebar();
+    renderHeader();
+    if (refreshAgain) {
+      refreshAgain = false;
+      void loadProjectRuns();
+    }
+  }
+}
+
 const time = value => new Date(value).toLocaleTimeString('zh-CN', {hour: '2-digit', minute: '2-digit'});
 const scopeList = items => (current === 'group' ? items : items.filter(item => item.agentId === current));
 const currentMessages = () => conversations.get(current) || [];
 const statusLabels = {working: '工作中', thinking: '处理中', resting: '在线待命'};
 const isOnline = a => !a.managedDisabled && (demo || !!(a.lastSeen && Date.now() - a.lastSeen < 300000));
-const status = a =>
-  a.managedDisabled ? '已停用' : demo ? '演示伙伴' : isOnline(a) ? statusLabels[a.status] : '等待连接';
+function status(a) {
+  if (a.managedDisabled) return '已停用';
+  if (a.profileOnly) return a.status === 'error' ? '需要配置' : '尚未连接';
+  if (demo) return '演示伙伴';
+  const activity = activityFor(a);
+  if (activity) return activity.waiting ? '等待领取' : '工作中';
+  return isOnline(a) ? statusLabels[a.status] : '等待连接';
+}
 const avatar = a => {
   const m = MODELS[a?.model] || MODELS.Hermes;
-  return `<span class="avatar" aria-hidden="true" style="--avatar-bg:${m.bg};--avatar-ink:${m.color}">${m.mark}</span>`;
+  const ink = /^#[a-f\d]{6}$/i.test(a?.color) ? a.color : m.color;
+  return `<span class="avatar" aria-hidden="true" style="--avatar-bg:${m.bg};--avatar-ink:${ink}">${m.mark}</span>`;
 };
 const setHTML = (element, html) => {
   if (element.innerHTML !== html) element.innerHTML = html;
@@ -83,7 +190,9 @@ function saveDraft() {
 function updateURL() {
   const url = new URL(location.href);
   current === 'group' ? url.searchParams.delete('agent') : url.searchParams.set('agent', current);
-  selectedVisual ? url.searchParams.set('visual', selectedVisual) : url.searchParams.delete('visual');
+  selectedVisual && $('.workbench').matches('.results-expanded,.visual-overlay')
+    ? url.searchParams.set('visual', selectedVisual)
+    : url.searchParams.delete('visual');
   history.replaceState(null, '', url);
 }
 const compactScreen = matchMedia('(max-width:760px)');
@@ -97,7 +206,15 @@ function frameVisibility() {
 }
 // The embedded office has no connection of its own; it shows exactly what this page has.
 function sendOfficeState() {
-  frame.contentWindow?.postMessage({type: 'office-state', state}, location.origin);
+  const agents = state.agents.map(a => {
+    const activity = activityFor(a);
+    return {
+      ...a,
+      officeActivity: activity,
+      status: activity && !a.managedDisabled && !activity.waiting ? 'working' : a.status
+    };
+  });
+  frame.contentWindow?.postMessage({type: 'office-state', state: {...state, agents}}, location.origin);
 }
 function syncOfficeFrame() {
   sendOfficeState();
@@ -113,14 +230,19 @@ function syncOfficeFrame() {
 }
 function toggleVisual(show) {
   const board = $('.workbench');
+  const wasOpen = board.matches('.results-expanded,.visual-overlay');
   board.classList.toggle(compactScreen.matches ? 'visual-overlay' : 'results-expanded', show);
   $('#conversation').inert = compactScreen.matches && show;
   $('.office-live').inert = compactScreen.matches && show;
   $('#visual-toggle').setAttribute('aria-expanded', String(show));
   $('#expand-results').setAttribute('aria-expanded', String(show));
-  $('#expand-results').textContent = show ? '恢复分屏 ↙' : '展开 ↗';
+  $('#expand-results').textContent = show ? '返回办公室' : '查看全部';
+  $('#expand-results').setAttribute('aria-label', show ? '返回办公室' : '展开成果区域');
+  updateURL();
+  if (show) void renderVisuals();
   frameVisibility();
-  if (compactScreen.matches) (show ? $('#close-visual') : $('#visual-toggle')).focus({preventScroll: true});
+  if (compactScreen.matches && (show || wasOpen))
+    (show ? $('#close-visual') : $('#visual-toggle')).focus({preventScroll: true});
 }
 // First-run starting points for the local edition: each fills in the Agent studio, so the
 // only remaining choice is a model.
@@ -167,38 +289,40 @@ function renderOfficeContext() {
       : state.agents.length
         ? `${online} / ${state.agents.length} 在线`
         : '还没有成员';
-  const active = state.tasks.filter(t => t.status === 'active');
+  const active = state.agents.map(a => ({agent: a, task: activityFor(a)})).filter(r => r.task);
   $('#office-caption').textContent =
     current === 'group'
       ? '点办公室里的伙伴，直接开始私聊'
       : `正在与 ${state.agents.find(a => a.id === current)?.name || '伙伴'} 对话 · 点「一起群聊」返回团队`;
   setHTML(
     $('#work-strip'),
-    active.length
-      ? '<span>正在推进</span>' +
-          active
-            .slice(0, 4)
-            .map(t => {
-              const a = state.agents.find(a => a.id === t.agentId);
-              return `<button data-scene-agent="${esc(t.agentId)}" title="${esc((a?.name || '伙伴') + ' · ' + t.title)}">${avatar(a)}<strong>${esc(t.title)}</strong><small>${Math.round(t.progress)}%</small></button>`;
-            })
-            .join('')
-      : '<span>' +
-          (demo || online
-            ? '伙伴们现在没有执行中的任务，可以在群聊里讨论下一步。'
-            : !studioMode()
-              ? '等待伙伴连接，收到任务后会在这里同步。'
-              : state.agents.length
-                ? '成员都已停用或还没启动，可以在「创建 Agent」里启用。'
-                : '创建第一位成员后，它会坐进办公室，正在推进的任务也会显示在这里。') +
-          '</span>'
+    active
+      .slice(0, 5)
+      .map(
+        ({agent, task}) =>
+          '<button data-scene-agent="' +
+          esc(agent.id) +
+          '"' +
+          (task.id ? ' data-project="' + esc(task.id) + '"' : '') +
+          '>' +
+          avatar(agent) +
+          '<strong>' +
+          esc(agent.name) +
+          ' · ' +
+          esc(task.title) +
+          '</strong><small>' +
+          esc(task.step ? '第 ' + task.step + ' 步 · ' : '') +
+          esc(task.detail) +
+          '</small></button>'
+      )
+      .join('')
   );
 }
 function renderSidebar() {
-  $('#agent-count').textContent = state.agents.length;
+  $('#agent-count').textContent = people().length;
   $('#group-summary').textContent = `${state.agents.length} 位伙伴`;
   const query = $('#agent-search').value.trim().toLowerCase(),
-    visible = state.agents.filter(a => (a.name + ' ' + a.role + ' ' + a.id).toLowerCase().includes(query));
+    visible = people().filter(a => (a.name + ' ' + a.role + ' ' + a.id).toLowerCase().includes(query));
   setHTML(
     $('#conversations'),
     visible
@@ -213,12 +337,8 @@ function renderSidebar() {
   $('#group-chat').setAttribute('aria-current', String(current === 'group'));
 }
 function renderHeader() {
-  const a = state.agents.find(a => a.id === current),
+  const a = currentAgent(),
     group = current === 'group';
-  const showFiles = localConfig?.fileTools === true && Boolean(a) && fileScope === current;
-  $('#open-agent-files').hidden = !showFiles;
-  const filesDialog = $('#agent-files');
-  if (filesDialog.open && (!showFiles || filesDialog.dataset.agent !== current)) filesDialog.close();
   $('#conversation-title').textContent = group ? '办公室群聊' : a?.name || '伙伴对话';
   $('#conversation-kind').textContent = group ? 'TEAM CONVERSATION' : 'DIRECT MESSAGE';
   setHTML($('#room-symbol'), group ? '#' : avatar(a));
@@ -257,7 +377,7 @@ function renderHeader() {
       : studioMode()
         ? '先请来一位成员，再在这里分配工作…'
         : '伙伴连接后，就可以在这里分配工作…';
-  $('#visual-scope').textContent = group ? '全员交付的成果，在同一处查看' : `${a?.name || '伙伴'} 的成果与执行记录`;
+  $('#visual-scope').textContent = '';
 }
 function renderRecipients() {
   targets = new Set([...targets].filter(id => state.agents.some(a => a.id === id)));
@@ -378,10 +498,10 @@ async function renderVisuals() {
     $('#visual-content').textContent = '正在同步成果…';
     return;
   }
-  const items = scopeList(visuals);
+  const items = visuals;
   $('#result-tab-count').textContent = items.length || '';
   $('#mobile-result-count').textContent = items.length || '';
-  $('#visual-count').textContent = items.length ? String(items.length).padStart(2, '0') : '';
+  $('#visual-count').textContent = items.length ? String(items.length) : '';
   if (selectedVisual && !items.some(v => v.id === selectedVisual)) {
     selectedVisual = null;
     updateURL();
@@ -390,10 +510,15 @@ async function renderVisuals() {
   setHTML(
     $('#visual-picker'),
     items
-      .map(v => `<button data-visual="${esc(v.id)}" aria-pressed="${v.id === selectedVisual}">${esc(v.title)}</button>`)
+      .map(
+        v =>
+          `<button data-visual="${esc(v.id)}" aria-pressed="${v.id === selectedVisual}"><small>${esc(VISUAL_KINDS[v.kind] || v.kind)}</small><strong>${esc(v.title)}</strong></button>`
+      )
       .join('')
   );
   $('#visual-picker').hidden = !items.length;
+  $('#result-empty').hidden = !!items.length;
+  if (!$('.workbench').matches('.results-expanded,.visual-overlay')) return;
   if (!selectedVisual) {
     visualSignature = '';
     // Asking for a chart only makes sense once someone is there to make it.
@@ -439,7 +564,6 @@ async function renderVisuals() {
       setTimeout(() => URL.revokeObjectURL(url), 10000);
     };
     $('#copy-result').onclick = () => copyText(visual.content, '已复制成果内容');
-    updateURL();
   } catch {
     if (selectedVisual === id) {
       visualSignature = '';
@@ -452,13 +576,18 @@ function render() {
   renderOfficeContext();
   renderSidebar();
   renderHeader();
+  panel.update(currentAgent(), people(), fileScope, visuals);
   renderMessages();
   renderComposer();
   renderSteps();
   renderVisuals();
 }
 async function selectConversation(id) {
-  if (id === current) return;
+  if (id === current) {
+    panel.reset();
+    return;
+  }
+  panel.reset();
   saveDraft();
   current = id;
   quote = null;
@@ -470,7 +599,7 @@ async function selectConversation(id) {
   $('#composer-input').value = drafts.get(id) || '';
   errorAt('#chat-error', '');
   updateURL();
-  if (compactScreen.matches) toggleVisual(false);
+  toggleVisual(false);
   frame.contentWindow?.postMessage({type: 'office-focus-agent', agentId: id === 'group' ? null : id}, location.origin);
   render();
   if (!demo) await poll();
@@ -518,7 +647,7 @@ async function poll() {
       localMode === 'local' ? '● 本地办公室' : localMode === 'remote' ? '● 远程共享办公室' : '● 实时连接';
     errorAt('#chat-error', '');
     errorAt('#visual-error', '');
-    if (current !== 'group' && !state.agents.some(a => a.id === current)) {
+    if (scope === current && current !== 'group' && !currentAgent()) {
       current = 'group';
       $('#delivery-kind').value = '';
       targets.clear();
@@ -643,7 +772,8 @@ async function copyText(text, message) {
 function chooseVisual(id) {
   selectedVisual = id;
   visualSignature = '';
-  if (compactScreen.matches) toggleVisual(true);
+  toggleVisual(true);
+  updateURL();
   selectTab('results');
   renderVisuals();
 }
@@ -878,13 +1008,16 @@ if (demo) {
   $('#sync-status').textContent = '◌ 演示模式';
 }
 $('#composer-input').value = drafts.get(current) || '';
-$('#full-office').href = './office.html' + (demo ? '?demo=1' : '');
-$('#connection-details').href = './office.html?connect=1' + (demo ? '&demo=1' : '');
+$('#office-manage').href = './office.html?manage=1' + (demo ? '&demo=1' : '');
+$('#connection-code').textContent = 'mcp_servers:\n  agent_office:\n    url: "' + location.origin + '/mcp"';
+$('#open-connection-guide').onclick = () => {
+  document.querySelector('.office-options').open = false;
+  $('#connect-dialog').showModal();
+};
 $('#mode-switch').href = demo ? './' : '?demo=1';
 $('#mode-switch').textContent = demo ? '返回实时工作台' : '体验演示';
 $('#mcp-address').value = location.origin + '/mcp';
 if (onLoopback && !demo) {
-  $('#connection-details').textContent = '本机 MCP 连接配置 ↗';
   $('#connect-dialog > p').textContent =
     localMode === 'remote'
       ? '本机 Pi 可以和远程 Hermes 在这个办公室收发消息、领取任务。'
@@ -920,34 +1053,16 @@ $('#start-chat').onclick = async () => {
 };
 $('#work-strip').onclick = e => {
   const button = e.target.closest('[data-scene-agent]');
-  if (button) selectConversation(button.dataset.sceneAgent);
+  if (button)
+    selectConversation(button.dataset.sceneAgent).then(() => {
+      if (button.dataset.project) panel.project({taskId: button.dataset.project});
+    });
 };
 $('#agent-search').oninput = renderSidebar;
 $('#group-chat').onclick = () => selectConversation('group');
 $('#conversations').onclick = e => {
   const b = e.target.closest('[data-agent]');
   if (b) selectConversation(b.dataset.agent);
-};
-$('#open-agent-files').onclick = async () => {
-  const agent = state.agents.find(a => a.id === current);
-  if (!agent || !localConfig?.fileTools || fileScope !== current) return;
-  try {
-    const {openAgentFiles} = await import('./agent-files.js');
-    if (agent.id !== current) return;
-    openAgentFiles(agent, prompt => {
-      if (agent.id !== current) return;
-      const input = $('#composer-input');
-      const text = (input.value.trimEnd() ? input.value.trimEnd() + '\n' : '') + prompt;
-      if (text.length > input.maxLength) return toast('草稿已接近上限，缩短后再添加示例。');
-      input.value = text;
-      $('#delivery-kind').value = '';
-      saveDraft();
-      renderComposer();
-      input.focus();
-    });
-  } catch {
-    toast('暂时无法打开成员文件，请刷新后重试');
-  }
 };
 $('#recipients').onclick = e => {
   const b = e.target.closest('[data-target]');
@@ -1045,38 +1160,16 @@ $('.visual-tabs').onkeydown = e => {
   selectTab(tabs[next]);
   $('#tab-' + tabs[next]).focus();
 };
-// The Agent studio (local edition only); `template` prefills a new member.
-async function openStudio(template) {
+function openStudio(template) {
   if (!studioMode()) return $('#connect-dialog').showModal();
-  try {
-    const {openAgentStudio} = await import('./agent-studio.js');
-    await openAgentStudio({
-      template,
-      onChanged: poll,
-      onAgent: async agent => {
-        await selectConversation(agent.id);
-        await poll();
-        $('#composer-input').focus();
-      },
-      onConnect: () => $('#connect-dialog').showModal()
-    });
-  } catch {
-    toast('暂时无法打开工作室，请刷新页面重试');
-  }
+  panel.create(template);
 }
 const connectButton = $('#connect-button');
-if (localConfig?.studio === true) {
+if (studioMode()) {
   $('#connect-dialog > p').textContent = '其他 Agent 客户端可以通过本机 MCP 地址加入这个办公室。';
-  $('#connect-dialog .muted').textContent =
-    '通过工作室创建的 Agent 会在本机启动。外部伙伴的执行方式由各自的客户端配置。';
+  $('#connect-dialog .muted').textContent = '外部伙伴在自己的客户端运行。连接后可在成员设置中管理它的办公室资料。';
   connectButton.innerHTML = '<span aria-hidden="true">＋</span> 创建 Agent';
   connectButton.onclick = () => openStudio();
-  const entry = new URL(location.href);
-  if (entry.searchParams.get('studio') === '1') {
-    entry.searchParams.delete('studio');
-    history.replaceState(null, '', entry);
-    connectButton.click();
-  }
 } else connectButton.onclick = () => $('#connect-dialog').showModal();
 $('#close-connect').onclick = () => $('#connect-dialog').close();
 $('#copy-mcp').onclick = () => copyText($('#mcp-address').value, '已复制 MCP 地址');
@@ -1125,6 +1218,34 @@ $('#install-app').onclick = async () => {
 };
 $('#close-install').onclick = () => $('#install-dialog').close();
 
-render();
-poll();
+async function enterOffice() {
+  await loadProfiles();
+  render();
+  if (!demo) await poll();
+  const query = initialLink.searchParams;
+  if (query.has('visual')) chooseVisual(query.get('visual'));
+  if (query.has('task') && localConfig?.workbench) {
+    try {
+      const {session} = await api('/api/studio/projects/' + encodeURIComponent(query.get('task')));
+      const owner = session.agentId || 'pi-local';
+      if (!people().some(a => a.id === owner)) throw Error();
+      await selectConversation(owner);
+      await panel.project({taskId: session.id});
+    } catch {
+      toast('这个项目会话暂时无法打开。');
+    }
+  } else if (query.has('create') || query.has('studio')) {
+    if (currentAgent() && !query.has('create')) panel.settings();
+    else openStudio();
+  } else if (query.get('panel') === 'settings') panel.settings();
+  else if (query.get('panel') === 'files') panel.files();
+  if (query.get('connect') === '1') $('#connect-dialog').showModal();
+  const url = new URL(location.href);
+  url.searchParams.delete('studio');
+  history.replaceState(null, '', url);
+  void loadProjectRuns();
+}
+void enterOffice();
+document.addEventListener('office-project-change', loadProjectRuns);
+setInterval(loadProjectRuns, 2500);
 setInterval(poll, 4000);

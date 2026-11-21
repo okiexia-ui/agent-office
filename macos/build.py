@@ -115,6 +115,8 @@ def main():
                 "CFBundleVersion": package["version"], "CFBundleDevelopmentRegion": "zh_CN",
                 "LSMinimumSystemVersion": "13.0", "NSHighResolutionCapable": True,
                 "NSPrincipalClass": "NSApplication", "OfficeNodePath": node,
+                "NSDocumentsFolderUsageDescription": "读取你放在「文稿」里的办公室配置、成员记录和选定的项目。",
+                "NSDownloadsFolderUsageDescription": "打开你放在「下载」里的 Agent Office 和选定的项目文件。",
                 "NSAppTransportSecurity": {"NSAllowsLocalNetworking": True},
             }, target)
         arch = os.uname().machine

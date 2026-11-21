@@ -59,6 +59,7 @@ export function mountProjectChecks(mount) {
       if (!res.ok) throw new Error(data.error || '测试状态读取失败。');
       pending = false;
       show(data);
+      if (write || (!running && run?.finishedAt)) document.dispatchEvent(new Event('office-project-change'));
       if (write && !running) details.open = true;
       if (run?.status === 'running') timer = setTimeout(() => update(), 850);
     } catch (error) {

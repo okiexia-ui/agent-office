@@ -40,6 +40,11 @@ export async function startOfficeServer({
       }
       const url = new URL(request.url);
       if (!url.pathname.startsWith('/api/') && url.pathname !== '/mcp') {
+        if (projects && url.pathname === '/office.html' && !url.searchParams.has('manage')) {
+          res.writeHead(302, {Location: '/' + url.search, 'Cache-Control': 'no-store'});
+          res.end();
+          return;
+        }
         const file = path.resolve(
           publicDir,
           '.' + decodeURIComponent(url.pathname === '/' ? '/index.html' : url.pathname)
@@ -74,7 +79,12 @@ export async function startOfficeServer({
     server.listen(port, '127.0.0.1', resolve);
   });
   const url = `http://127.0.0.1:${server.address().port}`;
-  return {url, setAgentEnabled: backend.setAgentEnabled, close: () => new Promise(resolve => server.close(resolve))};
+  return {
+    url,
+    setAgentEnabled: backend.setAgentEnabled,
+    setMemberProfile: backend.setMemberProfile,
+    close: () => new Promise(resolve => server.close(resolve))
+  };
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href) {

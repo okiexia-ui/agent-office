@@ -205,10 +205,10 @@ final class OfficeWindow: NSObject, NSApplicationDelegate, NSWindowDelegate, WKU
             presentStatus("Node.js 启动失败：" + error.localizedDescription, failed: true)
             return
         }
-        timeout = Timer.scheduledTimer(withTimeInterval: 50, repeats: false) { [weak self] _ in
+        timeout = Timer.scheduledTimer(withTimeInterval: 120, repeats: false) { [weak self] _ in
             guard let self = self, self.runNumber == number, process.isRunning else { return }
             self.runNumber += 1; process.terminate(); self.helper = nil
-            self.presentStatus("连接超时。请检查本地办公室服务，再点重试。", failed: true)
+            self.presentStatus("连接超时。如果 macOS 弹出了文件夹访问提示，请先完成选择，再点重试。", failed: true)
         }
     }
     private func allowed(_ url: URL) -> Bool {
@@ -317,23 +317,15 @@ final class OfficeWindow: NSObject, NSApplicationDelegate, NSWindowDelegate, WKU
     private func showError(_ error: Error) {
         NSAlert(error: error).beginSheetModal(for: window)
     }
-    // Invoke the same controls as the web UI, including its disabled state.
-    private func clickWorkbenchControl(_ selector: String) {
+    private func projectCommand(_ command: String) {
         guard !browser.isHidden, let url = browser.url, allowed(url) else { NSSound.beep(); return }
-        let script = """
-            (() => {
-              const button = document.querySelector('\(selector)');
-              if (!button || button.disabled || !button.getClientRects().length) return false;
-              button.click();
-              return true;
-            })()
-            """
+        let script = "!document.dispatchEvent(new CustomEvent('office-project-command', {detail:'\(command)', cancelable:true}))"
         browser.evaluateJavaScript(script) { value, _ in
             if (value as? Bool) != true { NSSound.beep() }
         }
     }
-    @objc private func newTask(_ sender: Any?) { clickWorkbenchControl("#tb-new") }
-    @objc private func chooseProject(_ sender: Any?) { clickWorkbenchControl("#tb-folder") }
+    @objc private func newTask(_ sender: Any?) { projectCommand("new") }
+    @objc private func chooseProject(_ sender: Any?) { projectCommand("folder") }
     @objc private func refresh(_ sender: Any?) { if browser.isHidden { connect() } else { browser.reload() } }
     private func installMenu() {
         let main = NSMenu()
