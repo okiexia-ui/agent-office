@@ -59,3 +59,20 @@ test('Pi handles missing executables, time limits and cancellation', async t => 
   await assert.rejects(running, {name: 'AbortError'});
   await assert.rejects(preflightPi({env: {...env, OFFICE_PI_BIN: env.OFFICE_PI_BIN + '-missing'}}), /找不到 Pi/);
 });
+
+test('Office chats run Pi in an empty temporary folder, so local folder names never reach the model', async t => {
+  const env = await fakePi(
+    t,
+    `import {readdirSync} from 'node:fs';
+     console.log(JSON.stringify({cwd: process.cwd(), entries: readdirSync('.')}));`
+  );
+  env.OFFICE_PI_READ_TOOLS = '';
+  const first = JSON.parse(await generatePi('你好', {env}));
+  assert.notEqual(first.cwd, process.cwd());
+  assert.match(path.basename(first.cwd), /^office-pi-/);
+  assert.deepEqual(first.entries, []);
+  // The opt-in host read tools resolve paths from the real working directory.
+  env.OFFICE_PI_READ_TOOLS = '1';
+  const reading = JSON.parse(await generatePi('你好', {env}));
+  assert.equal(reading.cwd, process.cwd());
+});

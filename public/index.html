@@ -14,6 +14,7 @@
   <meta name="apple-mobile-web-app-title" content="Agent Office">
   <meta name="apple-mobile-web-app-status-bar-style" content="default">
   <link rel="stylesheet" href="./workspace.css">
+  <link rel="stylesheet" href="./taskbench.css">
 </head>
 <body>
   <a class="skip" href="#composer-input">跳到消息输入框</a>
@@ -83,9 +84,10 @@
       <form id="studio-connection-form" hidden autocomplete="off">
         <label class="studio-picker" id="studio-connection-picker" hidden>选择连接<select id="studio-connection-id"></select></label>
         <div class="studio-grid">
-          <label>服务商<select id="studio-provider"><option value="deepseek">DeepSeek</option><option value="openai">OpenAI</option><option value="custom">自定义兼容接口</option></select></label>
+          <label>服务商<select id="studio-provider"></select></label>
           <label>连接名称<input id="studio-connection-name" required maxlength="80" placeholder="例如：团队写作模型"></label>
         </div>
+        <p class="studio-hint studio-provider-hint" id="studio-provider-hint" hidden><span id="studio-provider-note"></span> <a id="studio-provider-docs" target="_blank" rel="noopener noreferrer">接口文档 ↗</a></p>
         <label>API 基础地址<input id="studio-base-url" type="url" maxlength="2048" required inputmode="url" autocomplete="off" spellcheck="false" placeholder="https://example.com/v1"></label>
         <div class="studio-grid">
           <label>模型 ID<input id="studio-model" maxlength="256" required autocomplete="off" spellcheck="false" placeholder="服务商提供的模型 ID"></label>
@@ -112,6 +114,64 @@
   </dialog>
   <dialog id="install-dialog" class="connect-dialog install-dialog" aria-labelledby="install-title"><header><h2 id="install-title">把 Agent Office 装成应用</h2><button id="close-install" aria-label="关闭安装说明">×</button></header><p>安装后它会出现在主屏幕、程序坞或开始菜单，在独立窗口里打开，登录状态和数据与网页版相同。</p><ol><li><b>iPhone / iPad（Safari）</b>：点底部「分享」，选「添加到主屏幕」。</li><li><b>Mac（Safari）</b>：菜单栏「文件」→「添加到程序坞」。</li><li><b>Chrome / Edge</b>：地址栏右侧的安装图标，或菜单里的「安装 Agent Office」。</li><li><b>Android（Chrome）</b>：菜单里的「安装应用」或「添加到主屏幕」。</li></ol><p class="muted">应用仍然连接你的办公室网站。断网时会显示离线提示，恢复网络后继续同步。</p></dialog>
   <div class="toast" id="toast" role="status" hidden></div>
-  <script type="module" src="./workspace.js"></script>
+  <template id="taskbench-shell">
+    <a class="skip" href="#tb-prompt">跳到任务输入框</a>
+    <div class="tb-layout">
+      <aside class="tb-sidebar" id="tb-sidebar" aria-label="任务导航">
+        <div class="tb-brand"><img src="./favicon.svg" width="28" height="28" alt=""><strong>Agent Office</strong><button type="button" id="tb-hide-nav" class="tb-icon-button" aria-label="关闭任务导航" data-tb-icon="close"></button></div>
+        <button type="button" id="tb-new" class="tb-new"><span data-tb-icon="plus"></span>新任务</button>
+        <div class="tb-history-label"><h2>最近任务</h2><button type="button" id="tb-search-toggle" class="tb-icon-button" aria-label="搜索历史任务" aria-expanded="false" data-tb-icon="search"></button></div>
+        <input id="tb-search" type="search" aria-label="搜索任务或项目" placeholder="搜索任务或项目" hidden>
+        <nav id="tb-history" aria-label="最近任务"></nav>
+        <footer class="tb-sidebar-footer">
+          <a href="./?view=office"><span data-tb-icon="office"></span>协作办公室<span class="tb-trailing" data-tb-icon="arrow-up-right"></span></a>
+          <a href="./?view=office&amp;studio=1"><span data-tb-icon="settings"></span>Agent 与模型</a>
+        </footer>
+      </aside>
+      <button type="button" id="tb-scrim" class="tb-scrim" aria-label="收起任务导航" hidden></button>
+      <main class="tb-main">
+        <header class="tb-topbar">
+          <button type="button" id="tb-menu" class="tb-icon-button" aria-label="打开任务导航" aria-controls="tb-sidebar" aria-expanded="false" data-tb-icon="menu"></button>
+          <span class="tb-crumb"><span data-tb-icon="terminal"></span>项目工作台</span><span class="tb-divider" aria-hidden="true">/</span><span id="tb-breadcrumb">新任务</span>
+          <span id="tb-model" class="tb-model" role="status"><i></i><span>正在连接 Pi</span></span>
+        </header>
+        <div id="tb-scroll" class="tb-scroll"><div id="tb-content" class="tb-content tb-empty">
+          <section id="tb-intro" class="tb-intro"><span class="tb-terminal" data-tb-icon="terminal" aria-hidden="true"></span><h1>从项目开始</h1><p>选一个本地文件夹，把想完成的事交给 Pi。</p></section>
+          <div id="tb-session-head" class="tb-session-head" hidden><span class="tb-project-line"><span data-tb-icon="folder"></span><span id="tb-project-label"></span></span><h1 id="tb-title"></h1></div>
+          <div id="tb-turns" aria-label="任务对话"></div>
+          <div id="tb-checks" hidden></div>
+          <div id="tb-composer-wrap" class="tb-composer-wrap">
+            <p id="tb-error" class="tb-error" role="alert" hidden></p>
+            <form id="tb-form" class="tb-form">
+              <textarea id="tb-prompt" rows="3" maxlength="12000" aria-label="任务指令" placeholder="描述任务，或贴一段需要排查的问题…"></textarea>
+              <div class="tb-form-tools">
+                <button type="button" id="tb-folder" class="tb-folder" aria-label="选择项目文件夹"><span data-tb-icon="folder"></span><span id="tb-folder-name">选择项目</span><span class="tb-chevron" data-tb-icon="chevron"></span></button>
+                <div class="tb-submit-group"><span id="tb-shortcut" aria-hidden="true">⌘ ↵</span>
+                  <button type="button" id="tb-stop" class="tb-stop" hidden><span data-tb-icon="stop"></span>停止</button>
+                  <button type="submit" id="tb-send" aria-label="发送任务" title="发送任务" disabled><span data-tb-icon="up"></span></button>
+                </div>
+              </div>
+            </form>
+            <div id="tb-suggestions" class="tb-suggestions" aria-label="任务示例">
+              <button type="button" data-example="请梳理这个项目的目录结构、主要入口和模块之间的关系，列出相关文件。"><span data-tb-icon="tree"></span>梳理项目</button>
+              <button type="button" data-example="请检查这个项目的代码，找出一个值得修复的问题，说明复现条件和涉及的文件。"><span data-tb-icon="search"></span>查找问题</button>
+              <button type="button" data-example="请为项目中一个缺少测试的边界情况补充测试，并说明如何验证。"><span data-tb-icon="test"></span>补充测试</button>
+            </div>
+            <p id="tb-model-note" class="tb-model-note" role="status" hidden><span id="tb-model-note-text"></span> <a id="tb-model-note-link" href="./?view=office&amp;studio=1">查看 Agent 与模型 ↗</a></p>
+          </div>
+        </div></div>
+        <span class="tb-sr-only" id="tb-live" role="status" aria-live="polite"></span>
+      </main>
+    </div>
+    <dialog id="tb-path-dialog" class="tb-dialog" aria-labelledby="tb-path-title">
+      <form id="tb-path-form"><header><h2 id="tb-path-title">选择项目文件夹</h2><button type="button" id="tb-path-close" class="tb-icon-button" aria-label="关闭选择项目文件夹" data-tb-icon="close"></button></header>
+        <label for="tb-path">本机文件夹路径</label><input id="tb-path" maxlength="4096" required spellcheck="false" autocomplete="off" placeholder="/Users/…/Projects/my-app">
+        <p>Pi 会在这个文件夹内读取和修改项目文件。</p>
+        <div id="tb-list-projects"></div>
+        <footer><button type="button" class="tb-secondary" id="tb-path-cancel">取消</button><button type="submit" class="tb-primary" id="tb-confirm-path">使用此文件夹</button></footer>
+      </form>
+    </dialog>
+  </template>
+  <script type="module" src="./start-workspace.js"></script>
 </body>
 </html>

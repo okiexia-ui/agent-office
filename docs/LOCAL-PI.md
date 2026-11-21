@@ -4,12 +4,32 @@
 
 ## 接入模型 API 并创建成员
 
-1. 在本机工作台打开「创建 Agent → 模型连接」。选择 DeepSeek、OpenAI 或自定义兼容服务，填写连接名称、基础 URL 和该服务所需的 API Key。可使用 HTTPS 或本机回环 HTTP 地址。
+1. 在本机工作台打开「创建 Agent → 模型连接」。选择服务商后会自动填入连接名称和基础地址，下方附有该服务的接口文档和注意事项；再填写该服务的 API Key。不在列表里的服务选「自定义兼容接口」。可使用 HTTPS 或本机回环 HTTP 地址。
 2. 点「获取可用模型」并选定型号，也可直接填写模型 ID。服务未提供模型列表时，手动输入账户可调用的准确 ID 即可保存。点「测试已保存连接」会向该型号发送简短的生成请求，云端调用使用对应账户的额度。多位成员可共用一个连接。
 3. 回到「Agent 设置」，填写名称、职责和工作指令，并选择刚才保存的连接。也可以选择已经就绪的「Pi · 本机模型」。
 4. 点击「创建并开始对话」后发送第一条私聊。在群里可以点名该成员，也可以在任务页把任务交给它。下次打开工作室，选择已创建的档案即可修改职责、指令或模型。
 
-服务端使用 OpenAI 兼容的 `POST /chat/completions` 文本接口。OpenAI 默认基础地址是 `https://api.openai.com/v1`，DeepSeek 是 `https://api.deepseek.com`。模型 ID 以账户实际可调用的型号为准。[DeepSeek 接口文档](https://api-docs.deepseek.com/) · [OpenAI 接口文档](https://developers.openai.com/api/reference/resources/chat/subresources/completions/methods/create)
+服务端使用 OpenAI 兼容的 `POST /chat/completions` 文本接口，「获取可用模型」读取 `GET /models`。模型 ID 以账户实际可调用的型号为准。
+
+### 支持的模型服务
+
+| 服务商 | 基础地址 | 说明 |
+| --- | --- | --- |
+| [OpenAI](https://developers.openai.com/api/reference/resources/chat/subresources/completions/methods/create) | `https://api.openai.com/v1` | 需要 OpenAI 开发者平台的 Key；ChatGPT 会员不含 API 额度 |
+| [Google Gemini](https://ai.google.dev/gemini-api/docs/openai) | `https://generativelanguage.googleapis.com/v1beta/openai` | Google AI Studio 的 Gemini API Key |
+| [OpenRouter](https://openrouter.ai/docs/guides/features/compatibility) | `https://openrouter.ai/api/v1` | 一个 Key 调用多家模型，包括 Claude |
+| [OpenCode（Zen）](https://opencode.ai/docs/zen/) | `https://opencode.ai/inference/openai/v1` | 只能用走 Chat Completions 的模型，如 GLM、Kimi、DeepSeek；旧地址 `https://opencode.ai/zen/v1` 也能识别 |
+| [Kimi 国际站](https://platform.kimi.ai/docs/api/chat) | `https://api.moonshot.ai/v1` | 与国内站的 Key 互不通用 |
+| [DeepSeek](https://api-docs.deepseek.com/) | `https://api.deepseek.com` | |
+| [Kimi（月之暗面）](https://platform.kimi.com/docs/api/chat) | `https://api.moonshot.cn/v1` | 国内站 |
+| [通义千问（阿里云百炼）](https://help.aliyun.com/zh/model-studio/compatibility-of-openai-with-dashscope) | `https://dashscope.aliyuncs.com/compatible-mode/v1` | 北京地域；其他地域或业务空间专属域名请用控制台给出的地址 |
+| [智谱 GLM](https://docs.bigmodel.cn/cn/guide/develop/openai/introduction) | `https://open.bigmodel.cn/api/paas/v4` | |
+| [豆包（火山方舟）](https://www.volcengine.com/docs/82379/1330626) | `https://ark.cn-beijing.volces.com/api/v3` | 模型 ID 可填推理接入点 ID（ep- 开头） |
+| [硅基流动](https://docs.siliconflow.cn/cn/api-reference/chat-completions/chat-completions) | `https://api.siliconflow.cn/v1` | 国际站账号用 `https://api.siliconflow.com/v1` |
+| [Ollama](https://docs.ollama.com/api/openai-compatibility) | `http://127.0.0.1:11434/v1` | 本机服务，不需要 Key；先 `ollama pull` 下载模型 |
+| [LM Studio](https://lmstudio.ai/docs/developer/openai-compat) | `http://127.0.0.1:1234/v1` | 本机服务，不需要 Key；在 Developer 页面启动服务 |
+
+预设列表在 `public/model-providers.js`。「获取可用模型」会跳过模型列表里标明只支持其他接口（如向量、图片、Responses、Messages）的条目。
 
 档案和模型凭证保存在当前本地办公室数据目录的 `studio/profiles.json`，文件权限为 0600。服务器会向配置的服务发送角色指令和该次推理需要的消息。设置页只显示密钥是否已配置。编辑原连接时，密钥框留空会沿用现有密钥。要清除密钥，请勾选「保存时清除已有密钥」并保存。更换服务主机时，请输入新主机的密钥，或明确清除已有密钥。
 

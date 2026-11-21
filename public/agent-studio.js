@@ -1,11 +1,19 @@
 // The local launcher serves these routes. Keys only travel in a connection save.
+import {providerFor, providerGroups, providers} from './model-providers.js';
+
 const dialog = document.querySelector('#agent-studio');
 const field = id => dialog.querySelector('#studio-' + id);
-const presets = {
-  deepseek: {name: 'DeepSeek', baseUrl: 'https://api.deepseek.com', model: 'deepseek-flash'},
-  openai: {name: 'OpenAI', baseUrl: 'https://api.openai.com/v1', model: ''},
-  custom: {name: '', baseUrl: '', model: ''}
-};
+const presets = Object.fromEntries(providers.map(p => [p.id, p]));
+const LOOPBACK = ['127.0.0.1', 'localhost', '[::1]'];
+
+field('provider').replaceChildren(
+  ...providerGroups.map(([group, label]) => {
+    const list = document.createElement('optgroup');
+    list.label = label;
+    list.append(...providers.filter(p => p.group === group).map(p => new Option(p.label, p.id)));
+    return list;
+  })
+);
 
 async function request(path = '', method = 'GET', body) {
   const response = await fetch('/api/studio' + path, {
@@ -72,8 +80,9 @@ export async function openAgentStudio({onAgent, onConnect, onChanged, template})
     field('save-agent').disabled =
       !source || (source === 'local' && !data.localAvailable && profile()?.enabled !== false);
     const entry = data.connections.find(c => c.id === source);
+    const host = entry && new URL(entry.baseUrl);
     field('model-hint').textContent = entry
-      ? '处理消息和任务时，相应内容会发送到 ' + new URL(entry.baseUrl).host + '。'
+      ? '处理消息和任务时，相应内容会发送到' + (LOOPBACK.includes(host.hostname) ? '本机的 ' : ' ') + host.host + '。'
       : data.localAvailable
         ? '使用本机加载的模型推理。'
         : source === 'local'
@@ -125,7 +134,9 @@ export async function openAgentStudio({onAgent, onConnect, onChanged, template})
         ? '地址已更换，请重新填写密钥'
         : previous?.hasKey
           ? '已保存，留空沿用'
-          : '按服务商要求填写';
+          : presets[field('provider').value]?.keyless
+            ? '本机服务一般不需要'
+            : '按服务商要求填写';
     field('test-connection').disabled = !connectionId || dirty;
     field('use-connection').hidden = !connectionId || dirty;
     field('use-connection').textContent = agentId ? '为当前 Agent 选用此连接 →' : '使用此连接创建 Agent →';
@@ -140,22 +151,31 @@ export async function openAgentStudio({onAgent, onConnect, onChanged, template})
     field('remove-confirm').hidden = true;
   }
 
+  // What to know about the chosen service, with a link to its own API docs.
+  function describeProvider() {
+    const preset = presets[field('provider').value];
+    const link = field('provider-docs');
+    field('provider-note').textContent = preset?.hint || '';
+    link.hidden = !preset?.docs;
+    if (preset?.docs) link.href = preset.docs;
+    field('provider-hint').hidden = !preset?.hint && !preset?.docs;
+  }
+
   function fillConnection(values) {
     field('connection-name').value = values.name;
     field('base-url').value = values.baseUrl;
-    field('model').value = values.model;
+    field('model').value = values.model || '';
     field('api-key').value = '';
     field('clear-key').checked = false;
     clearModels();
+    describeProvider();
   }
 
   function chooseConnection(id = '') {
     const entry = data.connections.find(c => c.id === id);
     connectionId = entry?.id || '';
     field('connection-id').value = connectionId;
-    const preset = entry
-      ? Object.keys(presets).find(key => presets[key].baseUrl === entry.baseUrl) || 'custom'
-      : 'deepseek';
+    const preset = entry ? providerFor(entry.baseUrl).id : 'deepseek';
     field('provider').value = preset;
     fillConnection(entry || presets[preset]);
     dirty = false;
@@ -254,6 +274,7 @@ export async function openAgentStudio({onAgent, onConnect, onChanged, template})
     fillConnection(presets[e.target.value]);
     dirty = true;
     connectionActions();
+    feedback();
   };
   field('connection-form').oninput = event => {
     if ([field('connection-id'), field('model-list')].includes(event.target)) return;

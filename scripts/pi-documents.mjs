@@ -40,7 +40,7 @@ function invoke(python, request, bytes, signal) {
   return new Promise((resolve, reject) => {
     const child = execFile(
       python,
-      ['-I', helper],
+      ['-I', '-B', helper],
       {
         encoding: 'buffer',
         maxBuffer: workspaceFileLimit + 8192,
@@ -104,6 +104,16 @@ async function run(request, {signal, bytes} = {}) {
     }
   }
   throw missing;
+}
+
+export function projectOperation(
+  {root, journal, identity, operation: action, path = '', query, text, oldText, newText, startLine},
+  {signal} = {}
+) {
+  return run(
+    {root, journal, identity, operation: 'project', action, path, query, text, oldText, newText, startLine},
+    {signal}
+  );
 }
 
 export async function documentTool(

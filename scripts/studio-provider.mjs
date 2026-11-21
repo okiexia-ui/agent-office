@@ -1,5 +1,10 @@
 // The local office sends only this agent's instructions and the current conversation to its configured API.
-export class ModelServiceError extends Error {}
+export class ModelServiceError extends Error {
+  constructor(message, status) {
+    super(message);
+    this.status = status;
+  }
+}
 
 export function validateBaseUrl(value) {
   const invalid = '请填写模型 API 的 HTTPS 基础地址。本机回环地址也可以使用 HTTP。';
@@ -21,17 +26,17 @@ function httpError(status) {
     404: '请检查基础地址和模型 ID。',
     429: '请检查配额或稍后重试。'
   }[status];
-  return new ModelServiceError(`模型服务返回 HTTP ${status}。${hint || '请检查模型服务状态。'}`);
+  return new ModelServiceError(`模型服务返回 HTTP ${status}。${hint || '请检查模型服务状态。'}`, status);
 }
 
-async function readJson(response) {
+async function readJson(response, limit) {
   // Count decoded bytes while reading. This also bounds compressed and chunked responses.
   const chunks = [];
   let bytes = 0;
   if (!response.body) throw new ModelServiceError('模型服务返回了空响应。');
   for await (const chunk of response.body) {
     bytes += chunk.length;
-    if (bytes > 1024 * 1024) throw new ModelServiceError('模型服务的响应超过了 1 MiB。');
+    if (bytes > limit) throw new ModelServiceError(`模型服务的响应超过了 ${limit / 1024 / 1024} MiB。`);
     chunks.push(chunk);
   }
   try {
@@ -41,7 +46,7 @@ async function readJson(response) {
   }
 }
 
-async function providerRequest(connection, route, {signal, send, body, timeout}) {
+async function providerRequest(connection, route, {signal, send, body, timeout, limit = 1024 * 1024}) {
   const url = validateBaseUrl(connection.baseUrl) + route;
   const deadline = AbortSignal.timeout(timeout);
   const requestSignal = signal ? AbortSignal.any([signal, deadline]) : deadline;
@@ -62,11 +67,14 @@ async function providerRequest(connection, route, {signal, send, body, timeout})
       await response.body?.cancel().catch(() => {});
       throw httpError(response.status);
     }
-    return await readJson(response);
+    return await readJson(response, limit);
   } catch (error) {
     signal?.throwIfAborted();
     if (deadline.aborted) throw new ModelServiceError('模型服务请求超时，请稍后重试。');
     if (error instanceof ModelServiceError) throw error;
+    const {hostname, host} = new URL(url);
+    if (['127.0.0.1', 'localhost', '[::1]'].includes(hostname))
+      throw new ModelServiceError(`连不上本机 ${host} 上的模型服务。请确认 Ollama、LM Studio 等服务已经启动。`);
     throw new ModelServiceError('连接模型服务失败，请检查 API 地址和网络。');
   }
 }
@@ -87,16 +95,39 @@ export async function generateApi(connection, prompt, {signal, instructions = ''
   return reply.trim();
 }
 
+// Gateways such as OpenCode list embedding, image and other-protocol models next to chat
+// models. Keep entries that say nothing about this, or that declare Chat Completions.
+const NOT_CHAT = new Set(
+  'embedding embeddings image images video audio speech tts transcription rerank moderation realtime'.split(' ')
+);
+function chatModel(item) {
+  if (typeof item?.type === 'string' && NOT_CHAT.has(item.type.toLowerCase())) return false;
+  const api = item?.api;
+  const routes = api && typeof api === 'object' && !Array.isArray(api) ? Object.keys(api) : [];
+  return !routes.length || routes.includes('chat-completions');
+}
+
 export async function listApiModels(connection, {signal, send = fetch} = {}) {
-  const catalog = await providerRequest(connection, '/models', {signal, send, timeout: 30000});
+  let catalog;
+  try {
+    // OpenRouter describes several hundred models in close to 1 MiB.
+    catalog = await providerRequest(connection, '/models', {signal, send, timeout: 30000, limit: 4 * 1024 * 1024});
+  } catch (error) {
+    if (error.status === 404 || error.status === 405)
+      throw new ModelServiceError(
+        `这个地址没有提供模型列表（HTTP ${error.status}）。请核对基础地址，或直接手动填写模型 ID。`
+      );
+    throw error;
+  }
   if (!Array.isArray(catalog?.data)) throw new ModelServiceError('该服务未返回兼容的模型列表。可以手动填写模型 ID。');
   const ids = new Set();
   for (const item of catalog.data) {
+    if (!chatModel(item)) continue;
     const id = item?.id;
     if (typeof id !== 'string' || !id.trim() || id.length > 256 || /[\u0000-\u001f\u007f]/.test(id)) continue;
     if (id === connection.apiKey || (connection.apiKey?.length >= 12 && id.includes(connection.apiKey))) continue;
     ids.add(id.trim());
-    if (ids.size === 256) break;
+    if (ids.size === 1000) break;
   }
   return [...ids];
 }

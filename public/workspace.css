@@ -1994,6 +1994,15 @@ summary:focus-visible {
   font-size: 12px;
   overflow-wrap: anywhere;
 }
+.agent-studio .studio-provider-hint {
+  margin-top: -6px;
+  color: var(--muted);
+}
+.studio-provider-hint a {
+  color: var(--green);
+  font-weight: 600;
+  white-space: nowrap;
+}
 .studio-form-actions {
   display: flex;
   justify-content: flex-end;
