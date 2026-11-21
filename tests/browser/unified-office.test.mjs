@@ -105,3 +105,52 @@ test(
     assert.deepEqual(errors, []);
   }
 );
+
+test('a new office explains an offline Pi instead of asking for a first member', {timeout: 30000}, async t => {
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'unified-office-first-run-'));
+  const builtin = {
+    id: 'pi-local',
+    kind: 'builtin',
+    name: 'Pi（本机）',
+    role: '本机 Pi 助手',
+    instructions: '',
+    enabled: true,
+    connectionId: 'local',
+    status: 'offline',
+    local: {state: 'off'}
+  };
+  const server = await startOfficeServer({
+    stateDir: dir,
+    env: {OFFICE_PORT: '0', OFFICE_PI_LOCAL: '1'},
+    studioFetch: () => Response.json({agents: [], connections: [], builtin})
+  });
+  let browser;
+  t.after(async () => {
+    await browser?.close();
+    await server.close();
+    await fs.rm(dir, {recursive: true, force: true});
+  });
+  browser = await chromium.launch({
+    executablePath: process.env.CHROMIUM_EXECUTABLE_PATH,
+    args: ['--enable-unsafe-swiftshader']
+  });
+  const page = await browser.newPage({viewport: {width: 1140, height: 740}});
+  page.setDefaultTimeout(12000);
+  const errors = [];
+  page.on('pageerror', err => errors.push(err.message));
+  await page.goto(server.url + '/');
+  // Pi has a profile but no model: every count agrees, and the group asks for a member that can reply.
+  await page.getByRole('heading', {name: '还没有成员在线'}).waitFor();
+  assert.equal(await page.locator('#office-presence').textContent(), '0 / 1 在线');
+  assert.equal(await page.locator('#group-summary').textContent(), '1 位伙伴');
+  assert.match(await page.locator('#conversations').textContent(), /未配置本机模型/);
+  assert.match(await page.locator('#message-log').textContent(), /Ollama、LM Studio/);
+  await page.locator('[data-agent="pi-local"]').click();
+  await page.getByRole('heading', {name: 'Pi（本机）还没有本机模型'}).waitFor();
+  assert.equal(await page.getByRole('heading', {name: '先请来第一位成员'}).count(), 0);
+  assert.match(await page.getByRole('link', {name: /查看配置说明/}).getAttribute('href'), /docs\/LOCAL-PI\.md/);
+  assert.match(await page.locator('#connection-note').textContent(), /配置好之前它不会回复/);
+  await page.getByRole('button', {name: /在设置里配置本机模型/}).click();
+  await page.getByRole('tab', {name: '设置', exact: true, selected: true}).waitFor();
+  assert.deepEqual(errors, []);
+});

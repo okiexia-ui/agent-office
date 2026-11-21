@@ -81,7 +81,15 @@ async function providerRequest(connection, route, {signal, send, body, timeout, 
   }
 }
 
-export async function generateApi(connection, prompt, {signal, instructions = '', send = fetch} = {}) {
+// Token counts the service reports for one request (OpenAI-style or input/output names).
+function reportUsage(usage, onUsage) {
+  if (!onUsage || !usage || typeof usage !== 'object') return;
+  const input = Math.max(0, Number(usage.prompt_tokens ?? usage.input_tokens) || 0);
+  const output = Math.max(0, Number(usage.completion_tokens ?? usage.output_tokens) || 0);
+  if (input || output) onUsage({input, output});
+}
+
+export async function generateApi(connection, prompt, {signal, instructions = '', send = fetch, onUsage} = {}) {
   const messages = [];
   if (instructions.trim()) messages.push({role: 'system', content: instructions});
   messages.push({role: 'user', content: prompt});
@@ -91,6 +99,7 @@ export async function generateApi(connection, prompt, {signal, instructions = ''
     timeout: 120000,
     body: {model: connection.model, messages, stream: false}
   });
+  reportUsage(data?.usage, onUsage);
   const reply = data?.choices?.[0]?.message?.content;
   if (typeof reply !== 'string' || !reply.trim())
     throw new ModelServiceError('模型服务未返回文本回复，请检查模型和接口格式。');
@@ -99,7 +108,11 @@ export async function generateApi(connection, prompt, {signal, instructions = ''
 
 // A project assignment explicitly grants this member the same scoped text tools
 // as Pi. The API connection never controls the root directory or the journal.
-export async function generateApiProject(connection, prompt, {signal, instructions = '', project, send = fetch}) {
+export async function generateApiProject(
+  connection,
+  prompt,
+  {signal, instructions = '', project, send = fetch, onUsage}
+) {
   const messages = [
     {
       role: 'system',
@@ -119,6 +132,7 @@ export async function generateApiProject(connection, prompt, {signal, instructio
       timeout: 120000,
       body: {model: connection.model, messages, tools, stream: false}
     });
+    reportUsage(data?.usage, onUsage);
     const message = data?.choices?.[0]?.message;
     const calls = message?.tool_calls;
     if (!Array.isArray(calls) || !calls.length) {

@@ -2,6 +2,7 @@
 import {DESKS, assignSeats} from './layout.js';
 import {MODELS} from './data.js';
 import {connectionForm, mountConnectionEditor} from './connection-editor.js';
+import {mountPiModelSetup} from './pi-model-setup.js';
 
 const mounts = new WeakMap();
 let pendingSave = Promise.resolve();
@@ -36,9 +37,11 @@ const panel = `
         <label for="studio-agent-connection">模型</label>
         <div class="member-model-row"><select id="studio-agent-connection" required></select><button type="button" id="studio-add-connection">＋ 新连接</button></div>
         <p class="member-hint" id="studio-model-hint"></p>
+        <p class="member-hint" id="studio-usage" hidden></p>
         <button type="button" id="studio-edit-connection" hidden>编辑所选连接</button>
       </div>
       <div id="studio-runtime" hidden><span class="member-field-title">模型</span><p id="studio-runtime-description"></p></div>
+      <div id="studio-local-model" class="pi-model" hidden></div>
       <div id="studio-external-controls" hidden>
         <label>办公室说明<textarea id="studio-office-notes" rows="3" maxlength="4000" aria-describedby="studio-notes-hint"></textarea></label>
         <p id="studio-notes-hint" class="member-hint">客户端通过 MCP 读取这段说明，自行决定如何采用。</p>
@@ -146,6 +149,13 @@ export async function mountMemberSettings(root, {agent = null, template, onAgent
   function renderManagedStatus() {
     const states = {running: '运行中', starting: '正在启动', disabled: '已停用', error: '待修复'};
     field('agent-status').textContent = states[profile.status] || '';
+    const used = profile.usage;
+    const count = n => n.toLocaleString('zh-CN');
+    field('usage').hidden = !used;
+    if (used)
+      field('usage').textContent =
+        `累计用量：${count(used.calls)} 次请求 · 输入 ${count(used.input)} · 输出 ${count(used.output)} tokens` +
+        `（自 ${new Date(used.since).toLocaleDateString('zh-CN', {month: 'long', day: 'numeric'})}起，以服务商返回为准）`;
     field('toggle-agent').textContent = profile.enabled === false ? '启用成员' : '停用成员';
   }
   field('type').textContent = builtin ? '本机 Pi' : external ? '外部 MCP 成员' : agent ? '工作室成员' : '创建成员';
@@ -199,8 +209,9 @@ export async function mountMemberSettings(root, {agent = null, template, onAgent
     field('seat').replaceChildren(...options);
     if (seatId) field('seat').value = seatId;
   } else if (builtin) {
-    field('runtime-description').textContent = 'Pi · 本机模型';
+    field('runtime').hidden = true;
     field('agent-status').textContent = catalog.localAvailable ? '已就绪' : '模型离线';
+    mountPiModelSetup(field('local-model'), {active, onChanged});
   } else {
     renderSources(profile?.connectionId);
     const editor = mountConnectionEditor({field, catalog, request, work, feedback, active, onSources: renderSources});

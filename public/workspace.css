@@ -800,7 +800,8 @@ summary:focus-visible {
   display: grid;
   gap: 7px;
 }
-.suggestions button {
+.suggestions button,
+.suggestions a {
   display: flex;
   justify-content: space-between;
   gap: 10px;
@@ -810,7 +811,12 @@ summary:focus-visible {
   padding: 10px 12px;
   font-size: 11px;
 }
-.suggestions button span {
+.suggestions a {
+  color: inherit;
+  text-decoration: none;
+}
+.suggestions button span,
+.suggestions a span {
   color: var(--green);
 }
 .composer-area {
@@ -1756,7 +1762,8 @@ summary:focus-visible {
     font-size: 11px;
     margin-bottom: 12px;
   }
-  .suggestions button {
+  .suggestions button,
+  .suggestions a {
     padding: 8px 10px;
     font-size: 10px;
   }
@@ -1917,7 +1924,8 @@ summary:focus-visible {
 }
 
 /* First run with no members: role templates and a blank start (local edition). */
-.onboarding .suggestions button {
+.onboarding .suggestions button,
+.onboarding .suggestions a {
   align-items: center;
   padding: 11px 13px;
 }

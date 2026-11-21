@@ -24,7 +24,7 @@
 | 方式 | 需要什么 | 内容发往哪里 |
 | --- | --- | --- |
 | **模型 API** | 一个 API Key：OpenAI、Gemini、OpenRouter、OpenCode、Kimi、DeepSeek、通义千问、智谱、豆包、硅基流动，或任何兼容 Chat Completions 的服务；本机的 Ollama、LM Studio 不需要 Key | 你为这位成员选择的模型服务 |
-| **本机 Pi** | llama.cpp 的 `llama-server`、一个 GGUF 模型文件，以及运行一次 `npm run pi:install` | 本机模型，浏览器可访问你配置的站点 |
+| **本机 Pi** | 运行一次 `npm run pi:install`，再在 Pi 的「设置」里选模型：正在运行的 Ollama / LM Studio，或一个 GGUF 文件（需要 llama.cpp 的 `llama-server`） | 本机模型，浏览器可访问你配置的站点 |
 | **你已有的 Agent** | 能连接本机办公室 MCP 的 Agent 客户端 | 由该客户端自己决定 |
 
 - 创建成员，或点已有工作室成员的「设置」，在「模型」旁点「＋ 新连接」。选好服务商、模型并保存，可以在同一处测试和复用该连接。各服务的地址见 [支持的模型服务](docs/LOCAL-PI.md#支持的模型服务)。

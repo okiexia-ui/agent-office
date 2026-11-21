@@ -173,3 +173,92 @@ body.night .member-settings .studio-error {
 #studio-remove-confirm p {
   margin-bottom: 8px;
 }
+
+/* Pi's local model: what this computer has, and which model Pi runs. */
+.member-settings .pi-model {
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--bg);
+}
+.pi-model-head,
+.pi-model-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.pi-model-actions {
+  justify-content: flex-start;
+}
+.pi-model-state {
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--pale);
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+.pi-model-state[data-state='ready'] {
+  color: var(--green);
+}
+.pi-model-state[data-state='failed'] {
+  color: #a13e2c;
+}
+body.night .pi-model-state[data-state='failed'] {
+  color: #f4a192;
+}
+.pi-model-checks {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: 12px;
+}
+.pi-model-checks li {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  min-width: 0;
+}
+.pi-model-checks li[data-ok]::before {
+  content: '○';
+  color: var(--muted);
+}
+.pi-model-checks li[data-ok='true']::before {
+  content: '✓';
+  color: var(--green);
+}
+.pi-model-checks li span {
+  flex: 1;
+}
+.pi-model-checks small {
+  color: var(--muted);
+  text-align: right;
+  overflow-wrap: anywhere;
+}
+.pi-model-checks .pi-model-fix {
+  display: block;
+  color: var(--muted);
+  line-height: 1.55;
+}
+.pi-model-checks code {
+  font-size: 11px;
+  padding: 1px 4px;
+  border-radius: 4px;
+  background: var(--pale);
+}
+.member-settings .pi-model-source {
+  gap: 8px;
+}
+.pi-model-source legend {
+  padding: 0;
+  margin-bottom: 6px;
+  font-size: 12px;
+  font-weight: 600;
+}

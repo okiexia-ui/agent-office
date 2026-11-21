@@ -185,3 +185,19 @@ test('every studio preset is a stored-form compatible address with its own docs'
   assert.equal(providerFor('https://opencode.ai/zen/v1').id, 'opencode');
   assert.equal(providerFor('https://models.example/v1').id, 'custom');
 });
+
+test('generation reports the tokens the service counted, in either naming', async () => {
+  const seen = [];
+  const reply = usage => async () => Response.json({choices: [{message: {content: '好的'}}], ...(usage && {usage})});
+  await generateApi(connection, 'hi', {
+    send: reply({prompt_tokens: 11, completion_tokens: 4}),
+    onUsage: u => seen.push(u)
+  });
+  await generateApi(connection, 'hi', {send: reply({input_tokens: 7, output_tokens: 2}), onUsage: u => seen.push(u)});
+  await generateApi(connection, 'hi', {send: reply(null), onUsage: u => seen.push(u)});
+  await generateApi(connection, 'hi', {send: reply({prompt_tokens: 'many'}), onUsage: u => seen.push(u)});
+  assert.deepEqual(seen, [
+    {input: 11, output: 4},
+    {input: 7, output: 2}
+  ]);
+});

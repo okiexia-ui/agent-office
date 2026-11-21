@@ -4,6 +4,7 @@ import {mentionedAgents} from './channel.js';
 import {escapeHTML as esc, VISUAL_KINDS, visualBody, isolatedDocument, visualDownload} from './visual-renderer.js';
 import {createMemberPanel} from './member-panel.js';
 import {onLoopback, readLocalConfig} from './local-mode.js';
+import {readPiSetup, savePiSetup} from './pi-model-setup.js';
 const $ = selector => document.querySelector(selector);
 const demo = new URLSearchParams(location.search).get('demo') === '1';
 const localConfig = demo ? null : await readLocalConfig();
@@ -54,8 +55,10 @@ const panel = createMemberPanel({
   openVisual: chooseVisual,
   notify: toast
 });
+let profileTimer;
 async function loadProfiles() {
   if (!localConfig?.studio) return;
+  clearTimeout(profileTimer);
   try {
     const catalog = await api('/api/studio');
     profiles = [...(catalog.agents || []), ...(catalog.builtin ? [catalog.builtin] : [])].map(p => ({
@@ -67,6 +70,11 @@ async function loadProfiles() {
   } catch {
     /* Previously read profiles can still be selected while reconnecting. */
   }
+  if (profiles.some(p => p.local?.state === 'starting'))
+    profileTimer = setTimeout(async () => {
+      await loadProfiles();
+      render();
+    }, 5000);
 }
 function appendFilePrompt(prompt) {
   const input = $('#composer-input');
@@ -137,9 +145,12 @@ const time = value => new Date(value).toLocaleTimeString('zh-CN', {hour: '2-digi
 const scopeList = items => (current === 'group' ? items : items.filter(item => item.agentId === current));
 const currentMessages = () => conversations.get(current) || [];
 const statusLabels = {working: '工作中', thinking: '处理中', resting: '在线待命'};
+const PI_STATES = {off: '未配置本机模型', starting: '正在加载模型', failed: '模型未能启动', stopped: '模型已停止'};
+const PI_SETUP = 'https://github.com/okiexia-ui/agent-office/blob/main/docs/LOCAL-PI.md#启动';
 const isOnline = a => !a.managedDisabled && (demo || !!(a.lastSeen && Date.now() - a.lastSeen < 300000));
 function status(a) {
   if (a.managedDisabled) return '已停用';
+  if (a.profileOnly && a.local) return PI_STATES[a.local.state] || '尚未连接';
   if (a.profileOnly) return a.status === 'error' ? '需要配置' : '尚未连接';
   if (demo) return '演示伙伴';
   const activity = activityFor(a);
@@ -268,11 +279,39 @@ const TEMPLATES = {
 };
 const studioMode = () => localConfig?.studio === true;
 // No members yet: the local edition invites you to create one; a remote office waits for one to connect.
-function onboarding() {
-  if (studioMode())
-    return `<div class="empty-chat onboarding"><span class="empty-symbol" aria-hidden="true">✳</span><h2>先请来第一位成员</h2><p>给它名字、职责和工作方式，再选一个模型：本机 Pi，或 DeepSeek、OpenAI 等 API。之后在群聊里点名它，或私聊交代工作。</p><div class="suggestions">${Object.entries(
-      TEMPLATES
+const STARTERS = `<button data-kind="chart" data-prompt="请整理当前任务，并把进度发布成图表。">把当前任务变成图表 <span>↗</span></button><button data-kind="document" data-prompt="请梳理这个项目的下一步，把行动计划文档发布到成果区。">一起想清楚下一步 <span>↗</span></button><button data-kind="html" data-prompt="请做一个能交互的 HTML 小工具，发布到 Visual。">把想法变成可交互的作品 <span>↗</span></button>`;
+// Ollama / LM Studio already running on this computer, read when nobody is online yet.
+let localSetup = null;
+async function loadLocalSetup() {
+  if (!studioMode() || !localConfig?.workbench) return;
+  try {
+    localSetup = await readPiSetup();
+  } catch {
+    localSetup = null;
+  }
+}
+const localChoices = () =>
+  (localSetup?.services || [])
+    .filter(s => s.models.length)
+    .map(s => ({name: s.name, url: s.baseUrl, model: s.models[0], count: s.models.length}));
+const localChoice = c => esc(JSON.stringify({name: c.name, url: c.url, model: c.model}));
+function localMemberButtons() {
+  return localChoices()
+    .map(
+      c =>
+        `<button data-local-member="${localChoice(c)}"><span class="template-name">用本机 ${esc(c.name)} 创建成员<small>${esc(c.model)}${c.count > 1 ? ' 等 ' + c.count + ' 个模型' : ''} · 不需要 API Key</small></span><span>创建 ↗</span></button>`
     )
+    .join('');
+}
+const MODEL_CHOICES = '本机 Pi，OpenAI、Kimi、DeepSeek、通义千问等模型服务，或本机的 Ollama、LM Studio';
+function onboarding() {
+  const waiting = people();
+  if (studioMode())
+    return `<div class="empty-chat onboarding"><span class="empty-symbol" aria-hidden="true">✳</span>${
+      waiting.length
+        ? `<h2>还没有成员在线</h2><p>${esc(waiting.map(a => a.name).join('、'))}还没有上线，点名单里的成员可以看原因。也可以再创建一位成员，选一个模型：${MODEL_CHOICES}。`
+        : `<h2>先请来第一位成员</h2><p>给它名字、职责和工作方式，再选一个模型：${MODEL_CHOICES}。`
+    }之后在群聊里点名它，或私聊交代工作。</p><div class="suggestions">${localMemberButtons()}${Object.entries(TEMPLATES)
       .map(
         ([key, t]) =>
           `<button data-template="${key}"><span class="template-name">${esc(t.name)}<small>${esc(t.role)}</small></span><span>创建 ↗</span></button>`
@@ -280,14 +319,65 @@ function onboarding() {
       .join('')}</div><button class="onboarding-blank" data-template="">从空白开始创建</button></div>`;
   return `<div class="empty-chat onboarding"><span class="empty-symbol" aria-hidden="true">✳</span><h2>还没有伙伴加入</h2><p>让已经运行的 Agent 通过 MCP 连接这个办公室。它登记后会坐进左边的办公室，消息、任务和成果都在这里。</p><div class="suggestions"><button data-connect>查看连接方式 <span>↗</span></button></div></div>`;
 }
+// An empty private chat explains this member's state, with the next step when it cannot reply yet.
+function directEmpty(a) {
+  const name = esc(a?.name || '伙伴');
+  const card = (title, text, actions = '') =>
+    `<div class="empty-chat onboarding"><span class="empty-symbol" aria-hidden="true">✳</span><h2>${title}</h2><p>${text}</p>${actions && `<div class="suggestions">${actions}</div>`}</div>`;
+  const usePi = localSetup?.pi?.version
+    ? localChoices()
+        .map(
+          c =>
+            `<button data-pi-model="${localChoice(c)}">让 Pi 使用本机 ${esc(c.name)}（${esc(c.model)}） <span>↗</span></button>`
+        )
+        .join('')
+    : '';
+  const setup =
+    usePi +
+    `<button data-member-settings>在设置里配置本机模型 <span>↗</span></button><a href="${PI_SETUP}" target="_blank" rel="noopener noreferrer">查看配置说明 <span>↗</span></a>`;
+  const create = '<button data-template="">创建使用其他模型的成员 <span>↗</span></button>';
+  if (a?.id === 'pi-local' && a.local && a.local.state !== 'ready' && !isOnline(a)) {
+    if (a.local.state === 'starting')
+      return card(`${name}正在加载本机模型`, '模型较大时需要一两分钟。可以先留言，加载完成后它会读取并回复。');
+    if (a.local.state === 'failed')
+      return card(
+        `${name}的本机模型没有启动`,
+        esc(a.local.error || '启动本机模型时出错。') + ' 修好后重新启动办公室即可。',
+        setup + create
+      );
+    return card(
+      `${name}还没有本机模型`,
+      'Pi 在这台电脑上用 llama.cpp 运行 GGUF 模型。按步骤配置后重新启动办公室，它就会上线。也可以先创建一位使用 Ollama、LM Studio 或模型 API 的成员。',
+      setup + create
+    );
+  }
+  if (a?.profileOnly && a.status === 'error')
+    return card(
+      `${name}需要配置`,
+      esc(a.error || '这位成员的模型连接不可用。') + ' 在「设置」里检查模型连接后保存。',
+      '<button data-member-settings>打开设置 <span>↗</span></button>'
+    );
+  if (a?.managedDisabled)
+    return card(
+      `${name}已停用`,
+      '可以先留言。在「设置」里重新启用后，它会继续处理。',
+      '<button data-member-settings>打开设置 <span>↗</span></button>'
+    );
+  return card(
+    `和${name}单独聊`,
+    '在这里交代具体工作，或在「项目任务」里选一个文件夹让它动手。它发布的成果会出现在场景下方。',
+    STARTERS
+  );
+}
 function renderOfficeContext() {
-  const online = state.agents.filter(isOnline).length;
+  const members = people(),
+    online = members.filter(isOnline).length;
   $('#office-presence').textContent = demo
     ? `${state.agents.length} 位演示伙伴`
     : !hasConnected
       ? '正在同步'
-      : state.agents.length
-        ? `${online} / ${state.agents.length} 在线`
+      : members.length
+        ? `${online} / ${members.length} 在线`
         : '还没有成员';
   const active = state.agents.map(a => ({agent: a, task: activityFor(a)})).filter(r => r.task);
   $('#office-caption').textContent =
@@ -320,7 +410,7 @@ function renderOfficeContext() {
 }
 function renderSidebar() {
   $('#agent-count').textContent = people().length;
-  $('#group-summary').textContent = `${state.agents.length} 位伙伴`;
+  $('#group-summary').textContent = `${people().length} 位伙伴`;
   const query = $('#agent-search').value.trim().toLowerCase(),
     visible = people().filter(a => (a.name + ' ' + a.role + ' ' + a.id).toLowerCase().includes(query));
   setHTML(
@@ -350,7 +440,7 @@ function renderHeader() {
       : avatar(a)
   );
   $('#conversation-subtitle').textContent = group
-    ? `${state.agents.length} 位 AI 伙伴 + 你 · 同一群聊，共享上下文`
+    ? `${people().length} 位 AI 伙伴 + 你 · 同一群聊，共享上下文`
     : a
       ? `${a.id === 'pi-local' ? a.role : a.model} · ${status(a)} · 独立私聊`
       : '正在读取伙伴信息';
@@ -362,9 +452,13 @@ function renderHeader() {
         ? '群聊中可以互相点名、引用回复，并一起查看成果。'
         : a?.managedDisabled
           ? '此伙伴已停用。可以先留言，重新启用后它会继续处理。'
-          : !a || !isOnline(a)
-            ? '伙伴尚未连接。可以先留言，连接后由它读取并回复。'
-            : '伙伴已连接，回复和执行结果会自动同步。';
+          : a?.local && a.local.state !== 'ready' && !isOnline(a)
+            ? a.local.state === 'starting'
+              ? '本机模型正在加载。可以先留言，加载完成后它会读取并回复。'
+              : '本机模型还不可用，配置好之前它不会回复。'
+            : !a || !isOnline(a)
+              ? '伙伴尚未连接。可以先留言，连接后由它读取并回复。'
+              : '伙伴已连接，回复和执行结果会自动同步。';
   $('#composer-foot').textContent = demo
     ? '示例对话 · 未调用真实模型'
     : group
@@ -400,19 +494,25 @@ function renderMessages() {
     current,
     list,
     linked.map(v => [v.id, v.messageId]),
-    state.agents.map(a => [a.id, a.name]),
+    people().map(a => [a.id, a.name, a.status, a.local?.state, a.managedDisabled, isOnline(a)]),
+    localChoices(),
+    Boolean(localSetup?.pi?.version),
     hasConnected
   ]);
   if (signature === messageSignature) return;
   const log = $('#message-log'),
     nearEnd = log.scrollHeight - log.scrollTop - log.clientHeight < 100 || !messageSignature;
   messageSignature = signature;
+  if (!list.length && !demo && hasConnected && current !== 'group') {
+    log.innerHTML = directEmpty(currentAgent());
+    return;
+  }
   if (!list.length && !demo && hasConnected && !state.agents.length) {
     log.innerHTML = onboarding();
     return;
   }
   if (!list.length) {
-    log.innerHTML = `<div class="empty-chat"><span class="empty-symbol" aria-hidden="true">✳</span><h2>一个想法，<br>和伙伴一起做出来。</h2><p>左边是伙伴们的办公室，右边一起讨论。点名分工、互相回应，完成的图表与文档直接交付到协作区。</p><div class="suggestions"><button data-kind="chart" data-prompt="请整理当前任务，并把进度发布成图表。">把当前任务变成图表 <span>↗</span></button><button data-kind="document" data-prompt="请梳理这个项目的下一步，把行动计划文档发布到成果区。">一起想清楚下一步 <span>↗</span></button><button data-kind="html" data-prompt="请做一个能交互的 HTML 小工具，发布到 Visual。">把想法变成可交互的作品 <span>↗</span></button></div></div>`;
+    log.innerHTML = `<div class="empty-chat"><span class="empty-symbol" aria-hidden="true">✳</span><h2>一个想法，<br>和伙伴一起做出来。</h2><p>左边是伙伴们的办公室，右边一起讨论。点名分工、互相回应，完成的图表与文档直接交付到协作区。</p><div class="suggestions">${STARTERS}</div></div>`;
     return;
   }
   log.innerHTML = list
@@ -1101,6 +1201,20 @@ $('#message-log').onclick = e => {
     $('#connect-dialog').showModal();
     return;
   }
+  if (e.target.closest('[data-member-settings]')) {
+    panel.settings();
+    return;
+  }
+  const localMember = e.target.closest('[data-local-member]');
+  if (localMember) {
+    void createLocalMember(JSON.parse(localMember.dataset.localMember), localMember);
+    return;
+  }
+  const piModel = e.target.closest('[data-pi-model]');
+  if (piModel) {
+    void usePiModel(JSON.parse(piModel.dataset.piModel), piModel);
+    return;
+  }
   const person = e.target.closest('[data-private]');
   if (person && state.agents.some(a => a.id === person.dataset.private)) {
     selectConversation(person.dataset.private);
@@ -1218,7 +1332,65 @@ $('#install-app').onclick = async () => {
 };
 $('#close-install').onclick = () => $('#install-dialog').close();
 
+// One click from a detected Ollama / LM Studio: reuse or add the connection, then add a member.
+async function createLocalMember({name, url, model}, button) {
+  button.disabled = true;
+  try {
+    const studio = (path = '', method = 'GET', body) =>
+      fetch('/api/studio' + path, {
+        method,
+        cache: 'no-store',
+        ...(body && {headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body)})
+      }).then(async r => {
+        const data = await r.json();
+        if (!r.ok) throw Error(data.error || '创建失败，请重试。');
+        return data;
+      });
+    const catalog = await studio();
+    const connection =
+      catalog.connections.find(c => c.baseUrl === url && c.model === model) ||
+      (await studio('/connections', 'POST', {name: name + ' · ' + model, baseUrl: url, model})).connection;
+    const taken = new Set(people().map(a => a.name));
+    let memberName = '本机助手';
+    for (let i = 2; taken.has(memberName); i++) memberName = '本机助手 ' + i;
+    const {agent} = await studio('/agents', 'POST', {
+      name: memberName,
+      role: '用本机 ' + name + ' 处理日常工作',
+      instructions: '',
+      connectionId: connection.id
+    });
+    await loadProfiles();
+    syncTag = null;
+    await poll();
+    await selectConversation(agent.id);
+    toast('已创建「' + agent.name + '」，使用本机 ' + name + ' · ' + model + '。');
+  } catch (error) {
+    toast(error.message);
+    button.disabled = false;
+  }
+}
+async function usePiModel({name, url, model}, button) {
+  button.disabled = true;
+  try {
+    await savePiSetup({url, model});
+    toast('正在让 Pi 使用本机 ' + name + ' · ' + model + '…');
+    for (let i = 0; i < 60; i++) {
+      await new Promise(resolve => setTimeout(resolve, 2000));
+      await loadProfiles();
+      const state = profiles.find(p => p.id === 'pi-local')?.local?.state;
+      if (state && state !== 'starting') break;
+    }
+    syncTag = null;
+    await poll();
+    render();
+  } catch (error) {
+    toast(error.message);
+    button.disabled = false;
+  }
+}
+
 async function enterOffice() {
+  await loadLocalSetup();
   await loadProfiles();
   render();
   if (!demo) await poll();

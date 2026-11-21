@@ -305,3 +305,38 @@ test('model discovery keeps saved and draft credentials separate, and leaves a m
   ]);
   assert.deepEqual((await (await send(studio, 'GET')).json()).connections, [c]);
 });
+
+test('API members keep a running token count that survives a restart, apart from the key file', async t => {
+  const dir = await mkdtemp(path.join(os.tmpdir(), 'office-studio-usage-'));
+  t.after(() => rm(dir, {recursive: true, force: true}));
+  const open = () => openAgentStudio({dir, startAgent: noopRunner, localAvailable: () => true});
+  let studio = await open();
+  const made = await (await send(studio, 'POST', '/connections', connection)).json();
+  const {agent: member} = await (
+    await send(studio, 'POST', '/agents', {...agent, connectionId: made.connection.id})
+  ).json();
+  assert.equal(member.usage, undefined);
+  studio.recordUsage(member.id, {input: 120, output: 30});
+  studio.recordUsage(member.id, {input: 80, output: 10});
+  const listed = (await (await send(studio, 'GET')).json()).agents.find(a => a.id === member.id);
+  assert.deepEqual({...listed.usage, since: 0}, {input: 200, output: 40, calls: 2, since: 0});
+  await studio.close();
+  // The count is written on close (and shortly after each request), never into profiles.json.
+  assert.doesNotMatch(await readFile(path.join(dir, 'profiles.json'), 'utf8'), /"usage"/);
+  assert.equal((await stat(path.join(dir, 'usage.json'))).mode & 0o777, 0o600);
+  studio = await open();
+  t.after(() => studio.close());
+  const reopened = (await (await send(studio, 'GET')).json()).agents.find(a => a.id === member.id);
+  assert.equal(reopened.usage.calls, 2);
+  assert.equal(reopened.usage.input, 200);
+});
+
+test('the built-in Pi reports what its local model is doing', async t => {
+  const {studio} = await fixture(t, {
+    localAvailable: () => false,
+    localStatus: () => ({state: 'failed', error: 'llama-server 已退出（1）。'})
+  });
+  const {builtin} = await (await send(studio, 'GET')).json();
+  assert.deepEqual(builtin.local, {state: 'failed', error: 'llama-server 已退出（1）。'});
+  assert.equal(builtin.status, 'offline');
+});

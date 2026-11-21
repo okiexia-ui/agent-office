@@ -99,6 +99,8 @@ export async function openAgentStudio({
   startAgent,
   markOffline,
   localAvailable,
+  // {state: 'ready' | 'starting' | 'failed' | 'stopped' | 'off', error?}; lets Pi's chat say what to do.
+  localStatus = () => ({state: localAvailable() ? 'ready' : 'off'}),
   localRole = () => '本机 Pi 助手',
   updateMember,
   stopProjects,
@@ -149,11 +151,51 @@ export async function openAgentStudio({
     return persist({...data, [group]: rows});
   }
 
+  // Tokens each API member has used, as reported by its service. Kept apart from
+  // profiles.json so the file holding keys is not rewritten on every request.
+  const usageFile = path.join(dir, 'usage.json');
+  let usage = {};
+  try {
+    const saved = JSON.parse(await fs.readFile(usageFile, 'utf8'));
+    if (saved && typeof saved === 'object' && !Array.isArray(saved)) usage = saved;
+  } catch {
+    /* Missing or unreadable usage starts from zero. */
+  }
+  let usageTimer, usageWrite;
+  function writeUsage() {
+    clearTimeout(usageTimer);
+    usageTimer = null;
+    const temp = usageFile + '.' + randomUUID() + '.tmp';
+    usageWrite = fs
+      .writeFile(temp, JSON.stringify(usage), {mode: 0o600, flag: 'wx'})
+      .then(() => fs.rename(temp, usageFile))
+      .catch(error => {
+        console.error('无法保存用量记录：' + error.message);
+        return fs.rm(temp, {force: true});
+      });
+    return usageWrite;
+  }
+  function recordUsage(id, {input = 0, output = 0} = {}) {
+    const entry = usage[id] ?? {input: 0, output: 0, calls: 0, since: Date.now()};
+    usage[id] = {...entry, input: entry.input + input, output: entry.output + output, calls: entry.calls + 1};
+    usageTimer ??= setTimeout(writeUsage, 1000);
+  }
+
   const runners = new Map();
   function visibleAgent(agent) {
     const {id, name, role, instructions, connectionId, enabled} = agent;
     const {status = enabled ? 'starting' : 'disabled', error} = runners.get(id) ?? {};
-    return {id, name, role, instructions, connectionId, enabled, status, ...(error ? {error} : {})};
+    return {
+      id,
+      name,
+      role,
+      instructions,
+      connectionId,
+      enabled,
+      status,
+      ...(error ? {error} : {}),
+      ...(usage[id] ? {usage: usage[id]} : {})
+    };
   }
 
   function builtin() {
@@ -165,7 +207,8 @@ export async function openAgentStudio({
       instructions: data.builtin?.instructions ?? '',
       enabled: true,
       connectionId: 'local',
-      status: localAvailable() ? 'running' : 'offline'
+      status: localAvailable() ? 'running' : 'offline',
+      local: localStatus()
     };
   }
   async function updateRoster(id, fields) {
@@ -294,6 +337,7 @@ export async function openAgentStudio({
 
   return {
     builtin,
+    recordUsage,
     hasBuiltinSettings() {
       return !!data.builtin;
     },
@@ -389,6 +433,8 @@ export async function openAgentStudio({
           await Promise.all([...runners.values()].map(run => run.stop?.()));
         } finally {
           runners.clear();
+          if (usageTimer) await writeUsage();
+          else await usageWrite;
         }
       });
     }
