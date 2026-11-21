@@ -11,8 +11,18 @@ import {preparePiModel} from './pi-model.mjs';
 import {runOfficePi} from './pi-office.mjs';
 import {openAgentStudio} from './agent-studio.mjs';
 import {openProjectSessions} from './project-sessions.mjs';
-import {generateApi} from './studio-provider.mjs';
+import {generateApi, generateApiProject} from './studio-provider.mjs';
 import {createPiFiles} from './pi-files.mjs';
+import {
+  PiSetupError,
+  detectServices,
+  findGgufFiles,
+  findLlamaServer,
+  piSettingsEnv,
+  readPiSettings,
+  validatePiSettings,
+  writePiSettings
+} from './pi-setup.mjs';
 
 const root = path.resolve(import.meta.dirname, '..');
 
@@ -70,6 +80,11 @@ if (!env.OFFICE_PI_BIN) {
     : 'pi';
 }
 
+// Pi's model comes from .env.local (fixed while running) or from settings saved in the workbench.
+const piSettingsFile = path.join(stateDir, 'studio', 'pi-model.json');
+const envModel = Boolean(env.OFFICE_MODEL_FILE || env.OFFICE_MODEL_URL);
+let piSettings = envModel || shared ? null : await readPiSettings(piSettingsFile);
+
 const controller = new AbortController();
 const {signal} = controller;
 for (const name of ['SIGTERM', 'SIGINT']) process.once(name, () => controller.abort());
@@ -109,11 +124,11 @@ let office,
 const localAvailable = () => Boolean(model && !model.stopped?.aborted && !signal.aborted);
 // What the workbench shows about the local model: 'starting' while a configured model
 // loads, 'ready', 'failed' (with the reason), 'stopped', or 'off' when none is configured.
-const piConfigured = Boolean(env.OFFICE_MODEL_FILE || env.OFFICE_MODEL_URL || shared);
+const piConfigured = () => Boolean(envModel || piSettings || shared);
 let piFailure = '';
 const localStatus = () => {
   if (localAvailable()) return {state: 'ready'};
-  if (!piConfigured) return {state: 'off'};
+  if (!piConfigured()) return {state: 'off'};
   if (piFailure) return {state: 'failed', error: piFailure};
   return {state: model ? 'stopped' : 'starting'};
 };
@@ -125,7 +140,7 @@ async function runningWork(origin) {
     sessions = 0;
   if (projects) {
     const list = await (await projects.fetch(new Request(origin + '/api/studio/projects'))).json();
-    sessions = (list.sessions || []).filter(s => s.status === 'running').length;
+    sessions = (list.sessions || []).filter(s => s.status === 'running' || s.progress?.operation === 'test').length;
   }
   if (call) {
     const {tasks: active = []} = await call('office_list_tasks', {status: 'active'});
@@ -142,12 +157,132 @@ async function desktopControl(request) {
     return Response.json({error: '缺少本机控制请求头。'}, {status: 403});
   if (url.pathname === '/api/local/activity' && request.method === 'GET')
     return Response.json(await runningWork(url.origin), {headers: {'Cache-Control': 'no-store'}});
+  if (url.pathname === '/api/local/pi' && request.method === 'GET')
+    return Response.json(await piSetup(), {headers: {'Cache-Control': 'no-store'}});
+  if (url.pathname === '/api/local/pi' && request.method === 'POST') return savePiSetup(request);
   if (url.pathname === '/api/local/shutdown' && request.method === 'POST') {
     console.log('收到停止请求，正在关闭办公室和本机模型…');
     setTimeout(() => controller.abort(), 50);
     return Response.json({stopping: true}, {status: 202});
   }
   return Response.json({error: 'Not found.'}, {status: 404});
+}
+
+// The variables Pi runs with: .env.local first, otherwise the saved workbench settings.
+async function piEnv() {
+  const merged = {...env, ...(envModel ? {} : piSettingsEnv(piSettings))};
+  if (merged.OFFICE_MODEL_FILE && !merged.OFFICE_LLAMA_BIN) {
+    const llama = await findLlamaServer(merged);
+    if (llama) merged.OFFICE_LLAMA_BIN = llama;
+  }
+  return merged;
+}
+
+async function bootPi() {
+  piFailure = '';
+  try {
+    const effective = await piEnv();
+    const version = await preflightPi({env: effective, signal});
+    console.log('正在连接本机模型…');
+    model = await preparePiModel({env: effective, runtimeDir, signal});
+    await studio?.syncBuiltin();
+    const builtin = studio?.builtin() || {
+      id: 'pi-local',
+      name: 'Pi（本机）',
+      role: ('本机 Pi · ' + model.modelName).slice(0, 80)
+    };
+    stopPi = await startAgent(builtin, null, error => {
+      console.error(error.message);
+      if (shared) controller.abort();
+    });
+    console.log(`Pi ${version} · ${model.modelName}`);
+  } catch (error) {
+    if (shared || signal.aborted) throw error;
+    piFailure = error.message;
+    console.error('本机 Pi 启动失败：' + error.message + ' 仍可使用 API 连接。');
+  }
+}
+
+// Switching models from the workbench: stop Pi and its model, then load the new settings.
+let piSwitch = Promise.resolve();
+function restartPi() {
+  piSwitch = piSwitch.then(async () => {
+    const previous = model;
+    model = null;
+    piFailure = '';
+    await stopPi?.().catch(() => {});
+    stopPi = null;
+    await previous?.close().catch(error => console.error(error.message));
+    if (signal.aborted) return;
+    if (piConfigured()) {
+      await studio?.syncBuiltin({starting: true}).catch(error => console.error(error.message));
+      await bootPi();
+    } else await studio?.syncBuiltin().catch(error => console.error(error.message));
+    await studio?.restore();
+  });
+  return piSwitch;
+}
+
+let piCli = {at: 0};
+async function piSetup() {
+  if (Date.now() - piCli.at > 20000) {
+    try {
+      piCli = {at: Date.now(), version: await preflightPi({env, signal})};
+    } catch (error) {
+      piCli = {at: Date.now(), error: error.message};
+    }
+  }
+  const current = envModel
+    ? env.OFFICE_MODEL_FILE
+      ? {file: env.OFFICE_MODEL_FILE}
+      : {url: env.OFFICE_MODEL_URL, model: env.OFFICE_MODEL_ID || ''}
+    : piSettings;
+  const [llama, services, files] = await Promise.all([findLlamaServer(env), detectServices(), findGgufFiles()]);
+  return {
+    status: localStatus(),
+    source: shared ? 'shared' : envModel ? 'env' : piSettings ? 'settings' : null,
+    current,
+    modelName: model?.modelName || null,
+    pi: {version: piCli.version || null, error: piCli.error || null},
+    llama,
+    services,
+    files
+  };
+}
+
+async function savePiSetup(request) {
+  if (shared || envModel)
+    return Response.json(
+      {error: shared ? '共享办公室不能在这里更换模型。' : '本机模型由 .env.local 配置。请在那里修改后重新启动。'},
+      {status: 409}
+    );
+  let body;
+  try {
+    body = await request.json();
+  } catch {
+    return Response.json({error: '请求格式无效。'}, {status: 400});
+  }
+  let next = null;
+  if (!body?.clear) {
+    try {
+      next = validatePiSettings(body);
+      if (
+        next.file &&
+        !(await fs.stat(next.file).then(
+          s => s.isFile(),
+          () => false
+        ))
+      )
+        throw new PiSetupError('找不到这个模型文件。');
+    } catch (error) {
+      if (error instanceof PiSetupError) return Response.json({error: error.message}, {status: 400});
+      throw error;
+    }
+  }
+  await writePiSettings(piSettingsFile, next);
+  piSettings = next;
+  void restartPi();
+  return Response.json({status: piConfigured() ? {state: 'starting'} : {state: 'off'}}, {status: 202});
 }
 
 async function startAgent(profile, connection, onStopped = () => {}) {
@@ -158,10 +293,13 @@ async function startAgent(profile, connection, onStopped = () => {}) {
   const signals = [signal, lifetime.signal];
   if (!connection && model.stopped) signals.push(model.stopped);
   const agentSignal = AbortSignal.any(signals);
-  const instructions =
-    profile.id === 'pi-local'
-      ? ''
-      : ['你是' + profile.name + '。你的职责是' + profile.role + '。', profile.instructions].filter(Boolean).join('\n');
+  function instructions() {
+    if (profile.id === 'pi-local' && !studio) return '';
+    const current = profile.id === 'pi-local' ? studio.builtin() : profile;
+    return ['你是' + current.name + '。你的职责是' + current.role + '。', current.instructions]
+      .filter(Boolean)
+      .join('\n');
+  }
   const avatar = connection ? 'API' : 'Pi';
   const workspace = !connection && files ? await files.rootFor(profile.id) : undefined;
   const ready = Promise.withResolvers();
@@ -179,21 +317,27 @@ async function startAgent(profile, connection, onStopped = () => {}) {
     onReady: ready.resolve,
     generate: (prompt, {signal, useWorkspace, request}) =>
       connection
-        ? generateApi(connection, prompt, {signal, instructions})
-        : generatePi(prompt, {
+        ? generateApi(connection, prompt, {
             signal,
-            instructions,
-            env: model.env,
-            workspace: useWorkspace ? workspace : undefined,
-            allowHostRead: useWorkspace,
-            nativeApps: Boolean(
-              useWorkspace &&
-              workspace &&
-              /\b(?:TextEdit|Finder|Preview|Mac|macOS)\b|访达|文本编辑|预览(?:应用|程序|中|里|打开|查看)/i.test(
-                request || ''
+            instructions: instructions(),
+            onUsage: used => studio?.recordUsage(profile.id, used)
+          })
+        : !model
+          ? Promise.reject(new Error('本机模型正在切换，请稍后重试。'))
+          : generatePi(prompt, {
+              signal,
+              instructions: instructions(),
+              env: model.env,
+              workspace: useWorkspace ? workspace : undefined,
+              allowHostRead: useWorkspace,
+              nativeApps: Boolean(
+                useWorkspace &&
+                workspace &&
+                /\b(?:TextEdit|Finder|Preview|Mac|macOS)\b|访达|文本编辑|预览(?:应用|程序|中|里|打开|查看)/i.test(
+                  request || ''
+                )
               )
-            )
-          }),
+            }),
     onError: error => console.error(profile.name + '：' + error.message)
   }).then(() => {
     if (!lifetime.signal.aborted && !signal.aborted) throw new Error('Agent 运行已中断。');
@@ -238,13 +382,17 @@ try {
     studio = await openAgentStudio({
       dir: path.join(stateDir, 'studio'),
       startAgent,
+      localRole: () => (model ? ('本机 Pi · ' + model.modelName).slice(0, 80) : '本机 Pi 助手'),
+      stopProjects: id => projects?.stopAgent(id),
+      updateMember: (id, fields) => office.setMemberProfile(id, fields),
       markOffline: (id, profile) =>
         office.setAgentEnabled(id, false, {
           name: profile.name,
           role: profile.role,
           model: profile.connectionId === 'local' ? 'Pi' : 'API'
         }),
-      localAvailable
+      localAvailable,
+      localStatus
     });
   if (studio) files = createPiFiles(stateDir, id => id === 'pi-local' || studio.isLocalPi(id));
   if (!shared)
@@ -252,12 +400,53 @@ try {
       dir: path.join(stateDir, 'projects'),
       localAvailable,
       localStatus,
-      generate: (prompt, {signal: turnSignal, project}) =>
-        generatePi(prompt, {
+      async resolveMember(id) {
+        const managed = await studio.projectAgent(id);
+        if (managed) {
+          const kind = managed.connectionId === 'local' ? 'pi' : 'api';
+          return {
+            ...managed,
+            kind,
+            available: managed.enabled !== false && (kind === 'pi' ? localAvailable() : Boolean(managed.connection))
+          };
+        }
+        if (!call) return null;
+        const {agents} = await call('office_get_state', {});
+        const member = agents.find(a => a.id === id);
+        return (
+          member && {
+            id,
+            name: member.name,
+            kind: 'external',
+            enabled: !member.managedDisabled,
+            available: !member.managedDisabled
+          }
+        );
+      },
+      officeCall: (name, args) => call(name, args),
+      generate: (prompt, {signal: turnSignal, project, member}) => {
+        const instructions = [
+          member.name && '你是' + member.name + '。',
+          member.role && '职责：' + member.role,
+          member.instructions
+        ]
+          .filter(Boolean)
+          .join('\n');
+        if (member.kind === 'api')
+          return generateApiProject(member.connection, prompt, {
+            signal: AbortSignal.any([turnSignal, signal]),
+            project,
+            instructions,
+            onUsage: used => studio?.recordUsage(member.id, used)
+          });
+        if (!model) return Promise.reject(new Error('本机模型暂不可用或正在切换，请稍后重试。'));
+        return generatePi(prompt, {
           signal: AbortSignal.any([turnSignal, signal, ...(model.stopped ? [model.stopped] : [])]),
           project,
+          instructions,
           env: model.env
-        })
+        });
+      }
     });
   office = await startOfficeServer({
     stateDir,
@@ -283,32 +472,13 @@ try {
     const reply = await rpc('tools/call', {name, arguments: args});
     return reply.structuredContent ?? JSON.parse(reply.content[0].text);
   };
+  if (studio && (piConfigured() || studio.hasBuiltinSettings())) {
+    // A configured but still loading (or offline) model has an editable seat.
+    await studio.syncBuiltin({starting: true}).catch(error => console.error(error.message));
+  }
   // Restore disabled seats and API runners before potentially loading a large GGUF.
   await studio?.restore({deferLocal: true});
-  if (env.OFFICE_MODEL_FILE || env.OFFICE_MODEL_URL || shared) {
-    try {
-      const version = await preflightPi({env, signal});
-      console.log('正在连接本机模型…');
-      model = await preparePiModel({env, runtimeDir, signal});
-      stopPi = await startAgent(
-        {
-          id: 'pi-local',
-          name: 'Pi（本机）',
-          role: ('本机 Pi · ' + model.modelName).slice(0, 80)
-        },
-        null,
-        error => {
-          console.error(error.message);
-          if (shared) controller.abort();
-        }
-      );
-      console.log(`Pi ${version} · ${model.modelName}`);
-    } catch (error) {
-      if (shared || signal.aborted) throw error;
-      piFailure = error.message;
-      console.error('本机 Pi 启动失败：' + error.message + ' 仍可使用 API 连接。');
-    }
-  }
+  if (piConfigured()) await bootPi();
   await studio?.restore();
   console.log(shared ? '正在使用远程共享办公室。' : '可以在本地工作台创建 Agent。');
   if (!signal.aborted) await new Promise(resolve => signal.addEventListener('abort', resolve, {once: true}));

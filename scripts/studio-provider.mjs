@@ -1,3 +1,5 @@
+import {projectToolSpec} from './pi-project-extension.mjs';
+import {projectOperation} from './pi-documents.mjs';
 // The local office sends only this agent's instructions and the current conversation to its configured API.
 export class ModelServiceError extends Error {
   constructor(message, status) {
@@ -79,7 +81,15 @@ async function providerRequest(connection, route, {signal, send, body, timeout, 
   }
 }
 
-export async function generateApi(connection, prompt, {signal, instructions = '', send = fetch} = {}) {
+// Token counts the service reports for one request (OpenAI-style or input/output names).
+function reportUsage(usage, onUsage) {
+  if (!onUsage || !usage || typeof usage !== 'object') return;
+  const input = Math.max(0, Number(usage.prompt_tokens ?? usage.input_tokens) || 0);
+  const output = Math.max(0, Number(usage.completion_tokens ?? usage.output_tokens) || 0);
+  if (input || output) onUsage({input, output});
+}
+
+export async function generateApi(connection, prompt, {signal, instructions = '', send = fetch, onUsage} = {}) {
   const messages = [];
   if (instructions.trim()) messages.push({role: 'system', content: instructions});
   messages.push({role: 'user', content: prompt});
@@ -89,10 +99,72 @@ export async function generateApi(connection, prompt, {signal, instructions = ''
     timeout: 120000,
     body: {model: connection.model, messages, stream: false}
   });
+  reportUsage(data?.usage, onUsage);
   const reply = data?.choices?.[0]?.message?.content;
   if (typeof reply !== 'string' || !reply.trim())
     throw new ModelServiceError('模型服务未返回文本回复，请检查模型和接口格式。');
   return reply.trim();
+}
+
+// A project assignment explicitly grants this member the same scoped text tools
+// as Pi. The API connection never controls the root directory or the journal.
+export async function generateApiProject(
+  connection,
+  prompt,
+  {signal, instructions = '', project, send = fetch, onUsage}
+) {
+  const messages = [
+    {
+      role: 'system',
+      content: [instructions, '使用 office_project 实际读取或修改当前项目的相对路径。只报告工具证实的改动。']
+        .filter(Boolean)
+        .join('\n')
+    },
+    {role: 'user', content: prompt}
+  ];
+  const tools = [{type: 'function', function: {name: 'office_project', ...projectToolSpec}}];
+  const deadline = AbortSignal.timeout(360000);
+  const runSignal = signal ? AbortSignal.any([deadline, signal]) : deadline;
+  for (let round = 0; round < 24; round++) {
+    const data = await providerRequest(connection, '/chat/completions', {
+      signal: runSignal,
+      send,
+      timeout: 120000,
+      body: {model: connection.model, messages, tools, stream: false}
+    });
+    reportUsage(data?.usage, onUsage);
+    const message = data?.choices?.[0]?.message;
+    const calls = message?.tool_calls;
+    if (!Array.isArray(calls) || !calls.length) {
+      if (typeof message?.content === 'string' && message.content.trim()) return message.content.trim();
+      throw new ModelServiceError('模型没有返回回复或项目工具调用。');
+    }
+    if (calls.length > 8 || calls.some(c => !c || c.function?.name !== 'office_project' || typeof c.id !== 'string'))
+      throw new ModelServiceError('模型返回了不支持的项目工具调用。');
+    messages.push({
+      role: 'assistant',
+      content: typeof message.content === 'string' ? message.content : null,
+      tool_calls: calls
+    });
+    for (const call of calls) {
+      runSignal.throwIfAborted();
+      let result;
+      try {
+        const args = JSON.parse(call.function.arguments);
+        if (!projectToolSpec.parameters.properties.operation.enum.includes(args.operation))
+          throw Error('不支持的项目文件操作。');
+        result = await projectOperation(
+          {...args, root: project.projectPath, identity: project.identity, journal: project.journal},
+          {signal: runSignal}
+        );
+      } catch (error) {
+        runSignal.throwIfAborted();
+        result = {error: error.message};
+      }
+      messages.push({role: 'tool', tool_call_id: call.id, content: JSON.stringify(result).slice(0, 20000)});
+    }
+  }
+  throw new ModelServiceError('这轮已达到项目工具调用上限，可以分步继续。');
 }
 
 // Gateways such as OpenCode list embedding, image and other-protocol models next to chat

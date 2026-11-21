@@ -1,6 +1,6 @@
 // The local launcher exposes one file workspace per Pi member.
-const dialog = document.querySelector('#agent-files');
-const field = id => dialog.querySelector('#files-' + id);
+const panel = document.querySelector('#agent-files');
+const field = id => panel.querySelector('#files-' + id);
 const maxUpload = 16 * 1024 * 1024;
 let session;
 
@@ -10,15 +10,20 @@ function formatBytes(bytes) {
   return (bytes / (1024 * 1024)).toFixed(1) + ' MiB';
 }
 
-export function openAgentFiles(agent, onPrompt) {
-  if (dialog.open) return;
+export function closeAgentFiles() {
+  session?.abort();
+  session = null;
+  panel.hidden = true;
+}
+
+export function openAgentFiles(agent, onPrompt, onClose) {
   session?.abort();
   const lifetime = (session = new AbortController());
   let folder = [];
   const list = field('list');
   const input = field('input');
   let busy = false;
-  const active = () => session === lifetime && !lifetime.signal.aborted && dialog.open;
+  const active = () => session === lifetime && !lifetime.signal.aborted && !panel.hidden;
 
   function feedback(message = '', error = false) {
     field('status').textContent = message;
@@ -120,12 +125,9 @@ export function openAgentFiles(agent, onPrompt) {
   field('title').textContent = agent.name + '的成员文件';
   field('folder').textContent = '根目录';
   list.replaceChildren();
-  dialog.dataset.agent = agent.id;
+  panel.dataset.agent = agent.id;
   field('mac-prompt').hidden = !/mac/i.test(navigator.userAgentData?.platform || navigator.platform);
-  field('close').onclick = () => dialog.close();
-  dialog.onclose = () => {
-    if (!dialog.open) lifetime.abort();
-  };
+  field('close').onclick = onClose;
   field('parent').onclick = () => run('正在返回上级目录…', () => load(folder.slice(0, -1)));
   field('reload').onclick = () => run('正在刷新…', () => load());
   field('upload').onclick = () => input.click();
@@ -144,16 +146,16 @@ export function openAgentFiles(agent, onPrompt) {
       if (active()) await load(folder, '已上传「' + file.name + '」。');
     });
   };
-  const prompts = dialog.querySelector('.files-prompts');
+  const prompts = panel.querySelector('.files-prompts');
   prompts.open = false;
   prompts.onclick = event => {
     const button = event.target.closest('[data-file-prompt]');
     if (button) {
-      dialog.close();
+      onClose();
       const prefix = folder.length ? folder.join('/') + '/' : '';
       onPrompt(button.dataset.filePrompt.replaceAll('{folder}', () => prefix));
     }
   };
-  dialog.showModal();
+  panel.hidden = false;
   run('正在读取成员文件…', () => load());
 }

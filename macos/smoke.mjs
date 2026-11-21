@@ -40,6 +40,13 @@ try {
   await fs.mkdir(other);
   await fs.copyFile(path.join(project, '.env.local'), path.join(other, '.env.local'));
   await assert.rejects(launchOffice({project: other, support}), /另一个办公室或版本/);
+  const profile = {name: '项目助手', role: '阅读与编辑代码', instructions: '说明已验证的改动'};
+  const res = await fetch(first.url + 'api/studio/members/pi-local', {
+    method: 'PUT',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify(profile)
+  });
+  assert.equal(res.status, 200);
   // Quitting the app asks for running work, then stops the office (and any local model).
   const control = {'X-Agent-Office-Control': '1'};
   const activity = await (await fetch(first.url + 'api/local/activity', {headers: control})).json();
@@ -56,9 +63,13 @@ try {
     }
   }
   assert.equal(childPid, null, 'the office stops when the app asks');
-  console.log(
-    'Passed: packaged launch, workbench capability, reopen, stale server, wrong office detection, activity and stop.'
-  );
+  const restart = await launchOffice({project, support});
+  childPid = restart.startedPid;
+  assert.ok(childPid);
+  const {builtin} = await (await fetch(restart.url + 'api/studio')).json();
+  assert.equal(builtin.name, profile.name);
+  assert.equal(builtin.instructions, profile.instructions);
+  console.log('Passed: packaged launch, reopen, runtime identity, safe stop and member settings after a full restart.');
 } finally {
   if (stale.listening) await new Promise(resolve => stale.close(resolve));
   if (childPid) {

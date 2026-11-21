@@ -77,17 +77,23 @@ test('a Pi member can receive and return files in a nested folder from its priva
   await page.getByRole('button', {name: '返回上一级目录'}).click();
   await page.getByRole('button', {name: '打开目录 本周草稿'}).waitFor();
   assert.ok(await page.locator('#files-parent').isDisabled());
-  await page.getByRole('button', {name: '关闭成员文件'}).click();
+  await page.getByRole('button', {name: '返回成员对话'}).click();
   await page.locator('[data-agent="api-editor"]').click();
-  assert.ok(await trigger.isHidden());
+  await trigger.click();
+  await page.locator('#files-capability').waitFor();
+  assert.ok(await page.locator('#files-upload').isHidden());
   assert.equal((await page.request.get(server.url + '/api/studio/files/api-editor')).status(), 404);
   await Promise.all([
     page.waitForResponse(response => response.url().endsWith('/api/sync?scope=external-pi') && response.ok()),
     page.locator('[data-agent="external-pi"]').click()
   ]);
-  assert.ok(await trigger.isHidden());
+  await trigger.click();
+  await page.locator('#files-capability').waitFor();
+  assert.ok(await page.locator('#files-upload').isHidden());
   await page.route('**/api/local-mode', route => route.fulfill({json: {mode: 'local', fileTools: false}}));
   await page.goto(server.url + '/?agent=' + id);
   await page.getByRole('heading', {level: 1, name: '文档编辑'}).waitFor();
-  assert.ok(await trigger.isHidden());
+  await trigger.click();
+  await page.locator('#files-capability').waitFor();
+  assert.ok(await page.locator('#files-upload').isHidden());
 });

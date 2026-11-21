@@ -96,7 +96,15 @@ test(
     });
     await mkdir(project);
     await writeFile(path.join(project, 'greet.cjs'), "// My unsaved-to-git work\nconsole.log('Hello');\n");
-    await writeFile(path.join(project, 'package.json'), JSON.stringify({scripts: {test: 'node greet.cjs'}}));
+    await writeFile(
+      path.join(project, 'verify.cjs'),
+      [
+        "require('./greet.cjs');",
+        "const timer = setInterval(() => { if (require('node:fs').existsSync('finish-test')) clearInterval(timer); }, 50);",
+        'setTimeout(() => { clearInterval(timer); process.exitCode = 1; }, 12000).unref();'
+      ].join('\n')
+    );
+    await writeFile(path.join(project, 'package.json'), JSON.stringify({scripts: {test: 'node verify.cjs'}}));
     model.listen(0, '127.0.0.1');
     await once(model, 'listening');
     service = spawn(process.execPath, ['scripts/local.mjs'], {
@@ -131,6 +139,8 @@ test(
     const errors = [];
     page.on('pageerror', error => errors.push(error.message));
     await page.goto(origin);
+    await page.locator('[data-agent="pi-local"]').first().click();
+    await page.locator('#open-project-task').click();
     await page.locator('#tb-folder').click();
     await page.locator('#tb-path').fill(project);
     await page.locator('#tb-confirm-path').click();
@@ -151,6 +161,12 @@ test(
       ['office_project']
     );
     await page.getByRole('button', {name: '运行 npm test', exact: true}).click();
+    await page.getByRole('button', {name: '停止测试', exact: true}).waitFor();
+    const activity = await (
+      await fetch(origin + '/api/local/activity', {headers: {'X-Agent-Office-Control': '1'}})
+    ).json();
+    assert.equal(activity.sessions, 1, 'the native quit check must include the running npm test');
+    await writeFile(path.join(project, 'finish-test'), 'done');
     await page.getByText('测试通过', {exact: true}).waitFor();
     assert.match(await page.locator('#tb-checks pre').innerText(), /Welcome/);
     await page.reload();

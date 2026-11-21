@@ -99,6 +99,11 @@ export async function openAgentStudio({
   startAgent,
   markOffline,
   localAvailable,
+  // {state: 'ready' | 'starting' | 'failed' | 'stopped' | 'off', error?}; lets Pi's chat say what to do.
+  localStatus = () => ({state: localAvailable() ? 'ready' : 'off'}),
+  localRole = () => '本机 Pi 助手',
+  updateMember,
+  stopProjects,
   testConnection = defaultTest,
   listModels = listApiModels
 }) {
@@ -146,11 +151,102 @@ export async function openAgentStudio({
     return persist({...data, [group]: rows});
   }
 
+  // Tokens each API member has used, as reported by its service. Kept apart from
+  // profiles.json so the file holding keys is not rewritten on every request.
+  const usageFile = path.join(dir, 'usage.json');
+  let usage = {};
+  try {
+    const saved = JSON.parse(await fs.readFile(usageFile, 'utf8'));
+    if (saved && typeof saved === 'object' && !Array.isArray(saved)) usage = saved;
+  } catch {
+    /* Missing or unreadable usage starts from zero. */
+  }
+  let usageTimer, usageWrite;
+  function writeUsage() {
+    clearTimeout(usageTimer);
+    usageTimer = null;
+    const temp = usageFile + '.' + randomUUID() + '.tmp';
+    usageWrite = fs
+      .writeFile(temp, JSON.stringify(usage), {mode: 0o600, flag: 'wx'})
+      .then(() => fs.rename(temp, usageFile))
+      .catch(error => {
+        console.error('无法保存用量记录：' + error.message);
+        return fs.rm(temp, {force: true});
+      });
+    return usageWrite;
+  }
+  function recordUsage(id, {input = 0, output = 0} = {}) {
+    const entry = usage[id] ?? {input: 0, output: 0, calls: 0, since: Date.now()};
+    usage[id] = {...entry, input: entry.input + input, output: entry.output + output, calls: entry.calls + 1};
+    usageTimer ??= setTimeout(writeUsage, 1000);
+  }
+
   const runners = new Map();
   function visibleAgent(agent) {
     const {id, name, role, instructions, connectionId, enabled} = agent;
     const {status = enabled ? 'starting' : 'disabled', error} = runners.get(id) ?? {};
-    return {id, name, role, instructions, connectionId, enabled, status, ...(error ? {error} : {})};
+    return {
+      id,
+      name,
+      role,
+      instructions,
+      connectionId,
+      enabled,
+      status,
+      ...(error ? {error} : {}),
+      ...(usage[id] ? {usage: usage[id]} : {})
+    };
+  }
+
+  function builtin() {
+    return {
+      id: 'pi-local',
+      kind: 'builtin',
+      name: data.builtin?.name ?? 'Pi（本机）',
+      role: data.builtin?.role ?? localRole(),
+      instructions: data.builtin?.instructions ?? '',
+      enabled: true,
+      connectionId: 'local',
+      status: localAvailable() ? 'running' : 'offline',
+      local: localStatus()
+    };
+  }
+  async function updateRoster(id, fields) {
+    try {
+      return await updateMember?.(id, fields);
+    } catch (error) {
+      if (Number.isInteger(error.status)) throw new StudioError(error.message, error.status);
+      throw error;
+    }
+  }
+  function publishBuiltin({name, role} = builtin(), starting = false) {
+    return updateRoster('pi-local', {name, role, ...(starting && {starting})});
+  }
+
+  async function editMember(id, fields) {
+    if (data.agents.some(a => a.id === id)) throw new StudioError('请通过受管成员配置更新该成员。', 409);
+    const isBuiltin = id === 'pi-local';
+    const allowed = isBuiltin
+      ? ['name', 'role', 'instructions']
+      : ['name', 'role', 'color', 'seatId', 'enabled', 'officeNotes'];
+    if (Object.keys(fields).some(key => !allowed.includes(key))) throw new StudioError('此成员不支持提交的设置项。');
+    const profile = {name: textField(fields.name, '显示名', 24), role: textField(fields.role, '职责', 80)};
+    if (isBuiltin) {
+      profile.instructions = textField(fields.instructions, '工作指令', 6000, true);
+      // The private profile is authoritative on restart. Sending only name and role keeps instructions off MCP.
+      await publishBuiltin(profile);
+      try {
+        await persist({...data, builtin: profile});
+      } catch (error) {
+        await publishBuiltin();
+        throw error;
+      }
+      return json({agent: builtin()});
+    }
+    if (!updateMember) throw new StudioError('当前办公室无法更新外部成员。', 503);
+    const agent = await updateRoster(id, {...fields, ...profile});
+    if (agent.managedDisabled) await stopProjects?.(id);
+    return json({agent});
   }
 
   async function reconcile(agent) {
@@ -210,6 +306,7 @@ export async function openAgentStudio({
         if (typeof fields.enabled !== 'boolean') throw new StudioError('请指定 enabled 为 true 或 false。');
         const agent = {...previous, enabled: fields.enabled};
         if (previous.enabled !== agent.enabled) await save('agents', agent);
+        if (!agent.enabled) await stopProjects?.(id);
         if (runners.get(id)?.status !== (agent.enabled ? 'running' : 'disabled')) await reconcile(agent);
         return json({agent: visibleAgent(agent)});
       }
@@ -239,6 +336,22 @@ export async function openAgentStudio({
   }
 
   return {
+    builtin,
+    recordUsage,
+    hasBuiltinSettings() {
+      return !!data.builtin;
+    },
+    syncBuiltin({starting = false} = {}) {
+      return enqueue(() => publishBuiltin(builtin(), starting));
+    },
+    projectAgent(id) {
+      if (id === 'pi-local') return builtin();
+      const agent = data.agents.find(a => a.id === id);
+      if (!agent) return null;
+      const connection =
+        agent.connectionId === 'local' ? null : findRecord(data.connections, agent.connectionId, 'API 连接');
+      return {...visibleAgent(agent), connection};
+    },
     isLocalPi(id) {
       return data.agents.some(a => a.id === id && a.connectionId === 'local');
     },
@@ -255,8 +368,18 @@ export async function openAgentStudio({
         if (url.pathname === '/api/studio' && request.method === 'GET') {
           return json({
             localAvailable: localAvailable(),
+            builtin: builtin(),
             connections: data.connections.map(visibleConnection),
             agents: data.agents.map(visibleAgent)
+          });
+        }
+        const member = /^\/api\/studio\/members\/([\w-]{1,64})$/.exec(url.pathname);
+        if (member) {
+          if (request.method !== 'PUT') throw new StudioError('请使用 PUT 保存成员设置。', 405);
+          const fields = await readForm(request);
+          return await enqueue(() => {
+            if (closed) throw new StudioError('办公室正在关闭。', 503);
+            return editMember(member[1], fields);
           });
         }
         const route = /^\/api\/studio\/(connections|agents)(?:\/([\w-]+))?(?:\/(test|models|enabled))?$/.exec(
@@ -310,6 +433,8 @@ export async function openAgentStudio({
           await Promise.all([...runners.values()].map(run => run.stop?.()));
         } finally {
           runners.clear();
+          if (usageTimer) await writeUsage();
+          else await usageWrite;
         }
       });
     }

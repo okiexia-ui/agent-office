@@ -2,7 +2,7 @@ import {DESKS, assignSeats} from '../public/layout.js';
 import {WORKSPACE_TOOLS, callWorkspaceTool} from './workspace.js';
 // Authentication is enforced by the owner-private Sites gateway, for both browsers
 // and MCP/service callers. No API credential is shipped in browser assets.
-export const VERSION = '2.7.0';
+export const VERSION = '2.8.0';
 const STATE_KEY = 'office/state-v2.json';
 const MODELS = ['Hermes', 'ChatGPT', 'Claude', 'Codex', 'Gemini', 'Kimi', 'Grok', '豆包', 'DeepSeek', 'Pi', 'API'];
 const STATUSES = ['working', 'thinking', 'resting'];
@@ -43,7 +43,8 @@ export const TOOLS = [
   },
   {
     name: 'office_register_agent',
-    description: 'Register or reconnect an Agent in this office. Call once when connecting; reuse a stable agent_id.',
+    description:
+      'Register or reconnect with a stable agent_id. Read agent.officeNotes in the response for optional guidance from the office owner. These notes do not replace your runtime instructions.',
     inputSchema: schema(
       {
         agent_id: agentId,
@@ -93,7 +94,7 @@ export const TOOLS = [
   {
     name: 'office_claim_task',
     description:
-      'Claim the next queued task for an Agent, or resume the specified paused task. Returns the existing active task when already claimed.',
+      'Claim the next queued task, or resume a specified paused task. A project assignment includes project.directory, project.request and project.conversation for the assigned runtime.',
     inputSchema: schema({agent_id: agentId, task_id: idField}, ['agent_id']),
     annotations: {readOnlyHint: false, idempotentHint: true}
   },
@@ -227,9 +228,9 @@ function task(s, taskId) {
   return t;
 }
 function present(a) {
-  if (a.managedDisabled) throw new Problem('成员已停用，请先在 Agent 工作室启用。', 409);
+  if (a.managedDisabled) throw new Problem('成员已停用，请先在成员设置中启用。', 409);
   a.lastSeen = Date.now();
-  if (a.role === '等待 Hermes 连接') a.role = '自主执行与协作伙伴';
+  if (!a.officeProfile && a.role === '等待 Hermes 连接') a.role = '自主执行与协作伙伴';
 }
 function checkedArgs(name, args) {
   const definition = TOOLS.find(t => t.name === name);
@@ -285,18 +286,65 @@ export async function setManagedAgentEnabled(env, agentId, enabled, profile) {
     if (sameStatus && name === agent.name && role === agent.role && model === agent.model) return NO_CHANGE;
     Object.assign(agent, {name, role, model});
     if (sameStatus) return;
-    if (enabled) {
-      delete agent.managedDisabled;
-    } else {
-      agent.managedDisabled = true;
-      agent.lastSeen = null;
-      agent.status = 'resting';
-      for (const task of state.tasks) {
-        if (task.agentId === agentId && task.status === 'active') task.status = 'paused';
-      }
-      activity(state, agent.name, '已停用，执行中的任务已暂停');
-    }
+    setEnabled(state, agent, enabled);
   });
+}
+
+function setEnabled(state, agent, enabled, pauseQueued = false) {
+  if (enabled) {
+    delete agent.managedDisabled;
+    return;
+  }
+  agent.managedDisabled = true;
+  agent.lastSeen = null;
+  agent.status = 'resting';
+  for (const task of state.tasks)
+    if (task.agentId === agent.id && (task.status === 'active' || (pauseQueued && task.status === 'queued')))
+      task.status = 'paused';
+  activity(state, agent.name, '已停用，执行中的任务已暂停');
+}
+
+// Only the loopback studio calls this function. Registry packets and legacy board saves
+// cannot replace the presentation a user chose. Runtime instructions/keys stay in Studio.
+export async function setOfficeMemberProfile(env, agentId, profile) {
+  if (!env.PI_OFFICE) throw new Problem('Local managed office required.', 403);
+  id(agentId, 'agent_id');
+  const builtin = agentId === 'pi-local';
+  const name = str(profile.name, 'name', 24),
+    role = str(profile.role, 'role', 80);
+  const result = await mutate(env, s => {
+    let agent = s.agents.find(a => a.id === agentId);
+    if (!agent) {
+      if (!builtin) throw new Problem('找不到这位成员，请让它先连接办公室。', 404);
+      if (s.agents.length >= DESKS.length) throw new Problem('办公室工位已满。', 409);
+      agent = {id: agentId, model: 'Pi', completed: 0, status: 'resting', lastSeen: null};
+      s.agents.push(agent);
+      s.agents = assignSeats(s.agents);
+      agent = member(s, agentId);
+    }
+    if (builtin && profile.starting) Object.assign(agent, {lastSeen: null, status: 'resting'});
+    if (!builtin) {
+      if (profile.seatId != null) {
+        if (!DESKS.some(d => d.id === profile.seatId)) throw new Problem('请选择有效的工位。');
+        if (s.agents.some(a => a.id !== agentId && a.seatId === profile.seatId))
+          throw new Problem('这个工位已有成员，请选择空闲工位。', 409);
+        agent.seatId = profile.seatId;
+      }
+      if (
+        profile.color != null &&
+        (typeof profile.color !== 'string' || (profile.color && !/^#[0-9a-f]{6}$/i.test(profile.color)))
+      )
+        throw new Problem('颜色需要使用六位十六进制值。');
+      if (profile.color) agent.color = profile.color.toLowerCase();
+      else delete agent.color;
+      agent.officeNotes = str(profile.officeNotes ?? '', 'officeNotes', 4000, false);
+      if (typeof profile.enabled !== 'boolean') throw new Problem('请选择成员的启用状态。');
+      if (Boolean(agent.managedDisabled) === profile.enabled) setEnabled(s, agent, profile.enabled, true);
+    }
+    Object.assign(agent, {name, role, officeProfile: true});
+    return agent;
+  });
+  return result.result;
 }
 function normalizeState(s) {
   return {
@@ -537,7 +585,8 @@ export async function callTool(name, args, env) {
     });
   if (name === 'office_ack_channel') {
     const result = await mutate(env, s => {
-      member(s, id(a.agent_id, 'agent_id'));
+      const agent = member(s, id(a.agent_id, 'agent_id'));
+      if (agent.managedDisabled) throw new Problem('成员已停用。', 409);
       const through = channelSequence(a.through_sequence);
       if (through > (s.channelSequence || 0)) throw new Problem('Cannot acknowledge a future channel sequence.');
       s.channelReads = {...(s.channelReads || {}), [a.agent_id]: Math.max(channelReadThrough(s, a.agent_id), through)};
@@ -585,7 +634,8 @@ export async function callTool(name, args, env) {
       );
       const agent = existing || {id: a.agent_id, status: 'resting', completed: 0, lastSeen: null};
       const firstConnection = !agent.lastSeen;
-      Object.assign(agent, {name: displayName, model, role});
+      if (!agent.officeProfile) Object.assign(agent, {name: displayName, role});
+      agent.model = model;
       present(agent);
       if (!existing) s.agents.push(agent);
       if (firstConnection) activity(s, agent.name, '已连接到办公室');
@@ -650,6 +700,7 @@ export async function callTool(name, args, env) {
           throw new Problem('request_id already belongs to another task.', 409);
         return {task: previous};
       }
+      if (agent.managedDisabled && agent.officeProfile) throw new Problem('外部成员已停用，请先启用再分配任务。', 409);
       if (s.tasks.length >= 200) throw new Problem('Task capacity is 200.', 409);
       const t = {
         id: 'task_' + requestId.slice(0, 59),
@@ -719,7 +770,9 @@ export async function callTool(name, args, env) {
       return {task: t};
     }
   });
-  return {...result.result, revision: result.state.revision};
+  const claimed = name === 'office_claim_task' && result.result.task;
+  const project = claimed && env.OFFICE_PROJECT_BRIEF?.(claimed.id, claimed.agentId);
+  return {...result.result, ...(project && {project}), revision: result.state.revision};
 }
 export function validateReplacement(input, current) {
   if (
@@ -732,12 +785,13 @@ export function validateReplacement(input, current) {
     input.activities.length > 40
   )
     throw new Problem('Invalid office data.');
-  if (current.agents.some(a => a.managedDisabled && !input.agents.some(next => next?.id === a.id)))
-    throw new Problem('停用的成员及其记录归 Agent 工作室管理。', 409);
+  if (current.agents.some(a => (a.managedDisabled || a.officeProfile) && !input.agents.some(next => next?.id === a.id)))
+    throw new Problem('这位成员的档案已保存在办公室，请在成员设置中管理。', 409);
   let agents = input.agents.map(a => {
     const previous = current.agents.find(old => old.id === a.id);
     // A full-state browser save can move a seat, but must keep the lifecycle
     // marker and profile managed by the studio, including its offline presence.
+    if (previous?.officeProfile) return {...previous};
     if (previous?.managedDisabled) return {...previous, seatId: a.seatId ?? previous.seatId ?? null};
     return {
       seatId: a.seatId ?? previous?.seatId ?? null,

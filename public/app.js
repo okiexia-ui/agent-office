@@ -22,7 +22,7 @@ const AWAY_AFTER = 300000;
 const SMALL = matchMedia('(max-width: 860px)');
 const STAGES = {queued: '待领取', active: '执行中', paused: '已暂停', done: '已完成'};
 const KINDS = {...STATUS, pending: '待连接', offline: '离线', disabled: '已停用'};
-const enableHint = '在 Agent 工作室启用后可继续处理任务和留言。';
+const enableHint = '在成员的「设置」中启用后可继续处理任务和留言。';
 const FILTERS = [
   ['all', '全部'],
   ['working', '工作中'],
@@ -422,7 +422,7 @@ function taskCard(t, index) {
     t.status === 'done'
       ? ''
       : a?.managedDisabled
-        ? '<span class="task-disabled-note">成员已停用。请先在 Agent 工作室启用。</span>'
+        ? '<span class="task-disabled-note">成员已停用。请先在成员的「设置」中启用。</span>'
         : `<button class="button ghost compact" data-task-action="${t.status === 'paused' ? 'resume' : 'pause'}" data-task-id="${esc(t.id)}">${t.status === 'paused' ? '继续' : '暂停'}</button><button class="button secondary compact" data-task-action="complete" data-task-id="${esc(t.id)}">${icon('check')}标记完成</button>`;
   return `<article class="task-card is-${t.status}" data-task-card="${esc(t.id)}" style="--i:${index}"><div class="task-card-top"><span class="task-stage">${STAGES[t.status]}</span>${t.priority === 'high' ? '<span class="task-priority">优先</span>' : ''}<time>${when}</time></div><h3>${esc(t.title)}</h3>${t.description ? `<p>${esc(t.description)}</p>` : ''}${chain(t)}${t.result ? `<blockquote class="task-result"><strong>结果</strong>${esc(t.result)}</blockquote>` : ''}<div class="task-card-bottom">${a ? `<button class="task-assignee" data-chat="${esc(a.id)}" aria-label="打开 ${esc(a.name)} 的对话">${avatar(a)}<span>${esc(a.name)}</span></button>` : '<span class="task-assignee">未分配</span>'}${actions}</div></article>`;
 }
@@ -632,7 +632,7 @@ function openTask(agentId) {
   if (!available.length) {
     toast(
       state.agents.some(a => a.managedDisabled)
-        ? '没有可接单的成员。可以在 Agent 工作室启用成员，或完成现有任务。'
+        ? '没有可接单的成员。可以在成员的「设置」中启用成员，或完成现有任务。'
         : '伙伴们都有待办任务，可以先完成任务或招募新成员'
     );
     return;

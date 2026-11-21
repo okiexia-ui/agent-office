@@ -55,6 +55,7 @@ const VACUUM_ROUTE = [
 
 // Parts smaller than this (world units, about 12 cm) cast no shadow.
 const SMALL_PART = 0.12;
+const memberColor = agent => (/^#[0-9a-f]{6}$/i.test(agent.color) ? agent.color : MODELS[agent.model].color);
 const vec = (x, y, z) => new THREE.Vector3(x, y, z);
 const turn = (from, to) => {
   let d = (to - from) % (Math.PI * 2);
@@ -1019,7 +1020,7 @@ export class OfficeScene {
     const body = new THREE.Group();
     group.add(body);
     this.scene.add(group);
-    const color = MODELS[agent.model].color;
+    const color = memberColor(agent);
     // Soft, toy-like robots, each with an individual color and a tiny antenna.
     this.sphere(0.29, color, 0, 0.45, 0, body, 0.95, 1.2, 0.8);
     this.sphere(0.31, '#f8f5e9', 0, 0.96, 0, body, 1, 1.02, 0.93);
@@ -1070,6 +1071,7 @@ export class OfficeScene {
     this.bake(body);
     const obj = {
       id: agent.id,
+      color,
       group,
       body,
       ring,
@@ -1100,6 +1102,8 @@ export class OfficeScene {
         a.model,
         a.status,
         a.seatId,
+        memberColor(a),
+        a.officeActivity,
         a.completed || 0,
         isOffline(a),
         !a.lastSeen,
@@ -1108,9 +1112,9 @@ export class OfficeScene {
     );
     if (signature === this.agentSignature) return;
     this.agentSignature = signature;
-    const ids = new Set(agents.map(a => a.id));
+    const colors = new Map(agents.map(a => [a.id, memberColor(a)]));
     for (const [id, obj] of this.characters) {
-      if (!ids.has(id)) {
+      if (colors.get(id) !== obj.color) {
         obj.label.remove();
         this.scene.remove(obj.group);
         obj.group.traverse(o => {
@@ -1143,7 +1147,7 @@ export class OfficeScene {
               ? 'thinking'
               : 'working';
       if (owner) {
-        station.screen.color = MODELS[owner.model].color;
+        station.screen.color = memberColor(owner);
         station.screen.mark = MODELS[owner.model].mark;
       }
       if (station.screen.mode !== mode) {
@@ -1155,7 +1159,7 @@ export class OfficeScene {
     const taken = new Set();
     for (const a of this.agents) {
       const obj = this.characters.get(a.id);
-      if (!a.managedDisabled && a.status === 'resting' && obj?.spot && obj.spot.kind !== 'desk')
+      if (!this.embedded && !a.managedDisabled && a.status === 'resting' && obj?.spot && obj.spot.kind !== 'desk')
         taken.add(obj.spot.key);
     }
     const t = this.clock.getElapsedTime();
@@ -1164,7 +1168,7 @@ export class OfficeScene {
         obj = this.characters.get(a.id) || this.createCharacter(a, i),
         desk = DESKS.find(d => d.id === a.seatId);
       let spot = null;
-      if (!a.managedDisabled && a.status === 'resting') {
+      if (!this.embedded && !a.managedDisabled && a.status === 'resting') {
         const keep =
           !fresh && obj.spot && obj.spot.kind !== 'desk' ? REST_SPOTS.find(s => s.key === obj.spot.key) : null;
         const free = keep || REST_SPOTS.find(s => !taken.has(s.key));
@@ -1184,7 +1188,7 @@ export class OfficeScene {
       const offline = isOffline(a);
       const dot = document.createElement('span');
       dot.className = 'label-color';
-      dot.style.background = MODELS[a.model].color;
+      dot.style.background = memberColor(a);
       const name = document.createElement('span');
       name.className = 'label-name';
       name.textContent = a.name;
@@ -1202,10 +1206,37 @@ export class OfficeScene {
             : a.status === 'thinking'
               ? '···'
               : 'zᶻ';
+      const activity = a.officeActivity;
+      const working = Boolean(activity && !a.managedDisabled);
+      const stateLabel = a.managedDisabled
+        ? '已停用'
+        : offline
+          ? '待连接'
+          : a.status === 'working'
+            ? '工作中'
+            : a.status === 'thinking'
+              ? '思考中'
+              : '待命';
+      const step = working
+        ? [activity.title, activity.step > 0 ? '第 ' + activity.step + ' 步' : '', activity.detail]
+            .filter(Boolean)
+            .join(' · ')
+        : stateLabel;
+      if (this.embedded) {
+        suffix.className = 'label-state';
+        suffix.textContent = stateLabel;
+      }
       obj.label.replaceChildren(dot, name, suffix);
+      obj.label.classList.toggle('has-activity', working);
+      if (working) {
+        const detail = document.createElement('span');
+        detail.className = 'label-progress';
+        detail.textContent = step;
+        obj.label.append(detail);
+      }
       obj.label.labelWidth = 0;
-      obj.label.setAttribute('aria-label', `与 ${a.name} 聊天${a.managedDisabled ? '，成员已停用' : ''}`);
-      obj.label.title = a.managedDisabled ? a.name + ' · 已停用' : a.name;
+      obj.label.setAttribute('aria-label', '与 ' + a.name + ' 聊天，' + step);
+      obj.label.title = a.name + ' · ' + step;
     });
     this.refreshLights();
   }

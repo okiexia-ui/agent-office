@@ -15,40 +15,54 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="default">
   <link rel="stylesheet" href="./workspace.css">
   <link rel="stylesheet" href="./taskbench.css">
+  <link rel="stylesheet" href="./member-settings.css">
+  <link rel="stylesheet" href="./unified-office.css">
 </head>
-<body>
+<body class="unified-office">
   <a class="skip" href="#composer-input">跳到消息输入框</a>
   <header class="studio-bar">
     <a class="wordmark" href="./"><span class="brand-icon" aria-hidden="true">a<span>o</span></span><span>agent<b>office</b></span></a>
-    <span class="studio-tagline">一间办公室，一群 AI 伙伴。</span>
+
     <div class="studio-actions"><span id="sync-status" role="status">正在连接</span><a id="mode-switch" href="?demo=1">体验演示</a><button id="install-app" class="install-trigger" type="button" hidden>安装应用</button><button id="theme-toggle" aria-label="切换深色模式" title="切换深色模式">◐</button><button id="connect-button" class="connect-trigger"><span aria-hidden="true">＋</span> 连接伙伴</button></div>
   </header>
   <div class="workbench">
     <aside class="visual-panel" id="visual-panel" aria-label="办公室与协作成果">
       <section class="office-live" aria-labelledby="office-title">
-        <header class="office-heading"><div><span class="eyebrow">SHARED SPACE</span><h2 id="office-title">你的 AI 办公室 <span class="office-presence" id="office-presence"></span></h2></div><a id="full-office" href="./office.html" aria-label="打开完整 3D 办公室">进入空间 ↗</a></header>
+        <header class="office-heading"><div><h2 id="office-title">你的 AI 办公室 <span class="office-presence" id="office-presence"></span></h2></div><details class="office-options"><summary aria-label="办公室选项">•••</summary><div><button type="button" id="open-connection-guide">MCP 接入说明</button><a id="office-manage" href="./office.html?manage=1">任务与工位管理</a></div></details></header>
         <div class="office-stage"><iframe id="office-frame" title="实时 3D 办公室" loading="eager"></iframe><div class="office-loading" id="office-loading">正在打开办公室…</div></div>
         <div class="office-caption"><span><i class="live-dot"></i> <span id="office-caption">点一位伙伴，直接开始对话</span></span><span class="scene-interaction-hint">可旋转 · 可缩放 · 可点选</span></div>
         <div class="work-strip" id="work-strip" aria-label="伙伴正在做什么"></div>
       </section>
       <section class="visual-results" aria-labelledby="results-heading">
-        <header class="visual-head"><div class="results-title"><span class="result-mark" aria-hidden="true">◫</span><div><h2 id="results-heading">一起做出的成果 <span id="visual-count"></span></h2><p id="visual-scope">和当前对话关联，随时展开</p></div></div><div class="results-controls"><button id="expand-results" aria-label="展开成果区域" aria-expanded="false">展开 ↗</button><button id="close-visual" aria-label="返回办公室与群聊">×</button></div></header>
+        <header class="visual-head"><div class="results-title"><span class="result-mark" aria-hidden="true">◫</span><div><h2 id="results-heading">协作成果 <span id="visual-count"></span></h2><p id="visual-scope"></p></div></div><div class="results-controls"><button id="expand-results" aria-label="展开成果区域" aria-expanded="false">查看全部</button><button id="close-visual" aria-label="返回办公室与群聊">×</button></div></header>
         <div class="visual-tabs" role="tablist" aria-label="协作记录"><button role="tab" id="tab-results" aria-controls="panel-results" aria-selected="true" data-tab="results">成果 <span id="result-tab-count"></span></button><button role="tab" id="tab-steps" aria-controls="panel-steps" aria-selected="false" data-tab="steps" tabindex="-1">执行记录 <span id="step-tab-count"></span></button><span class="visual-sync"><i class="live-dot"></i> 与伙伴同步</span></div>
         <p class="inline-error visual-error" id="visual-error" role="alert" hidden></p>
-        <section id="panel-results" role="tabpanel" aria-labelledby="tab-results" class="visual-body"><div class="visual-picker" id="visual-picker" aria-label="选择成果"></div><div id="visual-content"></div></section>
+        <section id="panel-results" role="tabpanel" aria-labelledby="tab-results" class="visual-body"><div class="visual-picker" id="visual-picker" aria-label="选择成果"></div><p id="result-empty" class="panel-caption">成员发布的图表、文档和网页会出现在这里。</p><div id="visual-content"></div></section>
         <section id="panel-steps" role="tabpanel" aria-labelledby="tab-steps" class="visual-body" hidden><p class="panel-caption">伙伴汇报的实际执行记录</p><div id="step-list"></div></section>
       </section>
     </aside>
     <main class="conversation" id="conversation">
-      <header class="conversation-head"><span id="room-symbol" class="room-symbol" aria-hidden="true">#</span><div class="room-title"><span class="eyebrow" id="conversation-kind">TEAM CONVERSATION</span><h1 id="conversation-title">办公室群聊</h1><p id="conversation-subtitle">让伙伴在同一个上下文里协作</p></div><div class="room-avatars" id="room-avatars" aria-hidden="true"></div><button id="open-agent-files" class="files-trigger" type="button" aria-haspopup="dialog" hidden>成员文件</button><button class="visual-toggle" id="visual-toggle" aria-label="打开协作成果" aria-expanded="false">成果 <span id="mobile-result-count"></span> ◫</button></header>
+      <header class="conversation-head"><span id="room-symbol" class="room-symbol" aria-hidden="true">#</span><div class="room-title"><span class="eyebrow" id="conversation-kind">TEAM CONVERSATION</span><h1 id="conversation-title">办公室群聊</h1><p id="conversation-subtitle">让伙伴在同一个上下文里协作</p></div><div class="room-avatars" id="room-avatars" aria-hidden="true"></div><button class="visual-toggle" id="visual-toggle" aria-label="打开协作成果" aria-expanded="false">成果 <span id="mobile-result-count"></span> ◫</button></header>
       <section class="team-directory" id="sidebar" aria-label="群聊与伙伴私聊"><div class="team-toolbar"><span>你的伙伴 <b id="agent-count"></b></span><label class="team-search"><input id="agent-search" type="search" placeholder="找伙伴" aria-label="搜索伙伴"></label><button id="start-chat">@ 全员讨论</button></div><div class="conversation-switcher"><button class="conversation-row group-row selected" id="group-chat" aria-current="true"><span class="group-mark" aria-hidden="true">#</span><span><strong>一起群聊</strong><small id="group-summary">全员共享</small></span></button><nav id="conversations" aria-label="选择伙伴私聊"></nav></div></section>
+      <div class="member-tabs" role="tablist" aria-label="成员面板" id="member-tabs" hidden>
+        <button id="tab-chat" role="tab" aria-selected="true" aria-controls="member-chat" data-member-tab="chat">对话</button>
+        <button id="tab-settings" role="tab" aria-selected="false" aria-controls="member-settings" data-member-tab="settings">设置</button>
+        <button id="open-agent-files" role="tab" aria-selected="false" aria-controls="member-files" data-member-tab="files">文件</button>
+      </div>
+      <section id="member-chat" aria-label="对话">
+        <div id="project-controls" class="project-switch" hidden><button id="open-project-task" type="button">项目任务</button><button id="back-to-chat" type="button" hidden>← 返回消息</button></div>
+        <section id="member-project" aria-label="成员项目任务" hidden></section>
+        <div id="office-messages">
       <div class="connection-note" id="connection-note" role="status"></div>
       <div class="message-log" id="message-log" role="log" aria-label="聊天记录" aria-live="polite" aria-relevant="additions"></div>
       <div class="composer-area"><div class="recipient-list" id="recipients" aria-label="提醒哪些伙伴"></div><div class="quote-draft" id="quote-draft" hidden><span id="quote-text"></span><button id="quote-cancel" aria-label="取消引用">×</button></div><p class="inline-error" id="chat-error" role="alert" hidden></p><form class="composer" id="composer"><textarea id="composer-input" rows="1" maxlength="2000" placeholder="@伙伴分配工作，或和大家一起讨论…" aria-label="输入消息"></textarea><div class="composer-tools"><select id="delivery-kind" aria-label="交付形式" hidden><option value="">普通消息</option><option value="document">共享文档</option><option value="table">共享表格</option><option value="chart">共享图表</option><option value="html">交互 HTML</option></select><span id="composer-hint">Enter 发送 · Shift + Enter 换行</span><button id="send-button" type="submit" aria-label="发送消息" disabled>↑</button></div></form><p class="composer-foot" id="composer-foot">群聊共享上下文 · 成果同步在左侧</p></div>
-    </main>
-  </div>
-  <dialog id="agent-files" class="connect-dialog files-dialog" aria-labelledby="files-title">
-    <header><h2 id="files-title">成员文件</h2><button type="button" id="files-close" aria-label="关闭成员文件">×</button></header>
+        </div>
+      </section>
+      <div class="create-navigation" id="create-navigation" hidden><strong>创建成员</strong><button id="cancel-create" type="button">返回对话</button></div>
+      <section id="member-settings" role="tabpanel" aria-label="成员设置" hidden></section>
+      <section id="member-files" role="tabpanel" aria-labelledby="open-agent-files" hidden>
+  <section id="agent-files" class="files-dialog" hidden aria-labelledby="files-title">
+    <header><h2 id="files-title">成员文件</h2><button type="button" id="files-close" aria-label="返回成员对话">返回对话</button></header>
     <div class="files-nav"><button type="button" id="files-parent" aria-label="返回上一级目录">↑ 上一级</button><span id="files-folder" aria-label="当前目录"></span><button type="button" id="files-reload">刷新</button></div>
     <ul id="files-list" aria-label="当前目录中的文件"></ul>
     <div class="files-upload"><button type="button" id="files-upload">上传文件</button><input type="file" id="files-input" aria-label="选择上传文件" hidden><small>上传至当前目录，每个文件最多 16 MiB</small></div>
@@ -59,119 +73,16 @@
       <button type="button" data-file-prompt="请在浏览器打开成员文件「{folder}表单.html」，填写姓名为小林，将截图保存为「{folder}表单截图.png」。">填写网页并截图</button>
       <button type="button" id="files-mac-prompt" data-file-prompt="请在 Mac 的文本编辑中打开成员文件「{folder}说明.txt」。">在 Mac 文本编辑中打开文件</button>
     </details>
-  </dialog>
-  <dialog id="connect-dialog" class="connect-dialog"><header><h2>把伙伴带进工作台</h2><button id="close-connect" aria-label="关闭连接指南">×</button></header><p>用已运行的 Agent 连接办公室，消息、执行步骤和 Visual 会出现在这里。</p><label for="mcp-address">MCP 地址</label><div class="copy-row"><input id="mcp-address" readonly><button id="copy-mcp">复制</button></div><ol><li>在 Agent 客户端添加这个 MCP 服务，并完成站点登录或服务认证。</li><li>使用稳定的 Agent ID 登记，然后持续读取私聊与群聊。</li><li>提交真实回复，汇报执行步骤，发布可视化成果。</li></ol><div class="capability-grid"><span>私聊与群聊</span><span>任务与在线状态</span><span>图表 / 表格 / 文档</span><span>交互 HTML / 执行步骤</span></div><p class="muted">当前通过外部 Agent 执行。添加一个名字不会启动模型；这里也不会继承 ChatGPT 的订阅或已连接工具。</p><a id="connection-details" href="./office.html?connect=1">查看 Hermes 连接配置 ↗</a></dialog>
-  <dialog id="agent-studio" class="connect-dialog agent-studio" aria-labelledby="studio-heading">
-    <header><h2 id="studio-heading">Agent 工作室</h2><button type="button" id="studio-close" aria-label="关闭 Agent 工作室">×</button></header>
-    <fieldset id="studio-controls" disabled>
-      <nav class="studio-switch" aria-label="工作室设置"><button type="button" id="studio-profiles" aria-pressed="true">Agent 设置</button><button type="button" id="studio-connections" aria-pressed="false">模型连接</button></nav>
-      <form id="studio-agent-form" autocomplete="off">
-        <label class="studio-picker" id="studio-profile-picker" hidden>选择档案<select id="studio-agent-id"></select></label>
-        <div id="studio-run-controls" class="studio-run-controls" hidden>
-          <span id="studio-agent-status" aria-live="polite"></span>
-          <button type="button" id="studio-toggle-agent" class="studio-text"></button>
-        </div>
-        <div class="studio-grid">
-          <label>Agent 名称<input id="studio-agent-name" required maxlength="24" placeholder="例如：产品编辑"></label>
-          <label>职责<input id="studio-agent-role" maxlength="80" required placeholder="例如：产品文档与发布说明"></label>
-        </div>
-        <label>工作指令<textarea id="studio-agent-instructions" rows="3" maxlength="6000" placeholder="写下它的工作方式、输出格式和需要遵守的约定"></textarea></label>
-        <label>推理模型<select id="studio-agent-connection" required></select></label>
-        <button class="studio-text" type="button" id="studio-add-connection">＋ 添加 API 连接</button>
-        <p class="studio-hint" id="studio-model-hint"></p>
-        <div class="studio-form-actions"><button type="submit" id="studio-save-agent" class="studio-primary">创建并开始对话</button></div>
-      </form>
-      <form id="studio-connection-form" hidden autocomplete="off">
-        <label class="studio-picker" id="studio-connection-picker" hidden>选择连接<select id="studio-connection-id"></select></label>
-        <div class="studio-grid">
-          <label>服务商<select id="studio-provider"></select></label>
-          <label>连接名称<input id="studio-connection-name" required maxlength="80" placeholder="例如：团队写作模型"></label>
-        </div>
-        <p class="studio-hint studio-provider-hint" id="studio-provider-hint" hidden><span id="studio-provider-note"></span> <a id="studio-provider-docs" target="_blank" rel="noopener noreferrer">接口文档 ↗</a></p>
-        <label>API 基础地址<input id="studio-base-url" type="url" maxlength="2048" required inputmode="url" autocomplete="off" spellcheck="false" placeholder="https://example.com/v1"></label>
-        <div class="studio-grid">
-          <label>模型 ID<input id="studio-model" maxlength="256" required autocomplete="off" spellcheck="false" placeholder="服务商提供的模型 ID"></label>
-          <label>API Key<input id="studio-api-key" type="password" maxlength="4096" autocomplete="new-password" spellcheck="false"></label>
-        </div>
-        <label class="studio-check" id="studio-clear-key-label" hidden><input type="checkbox" id="studio-clear-key">保存时清除已有密钥</label>
-        <button type="button" class="studio-text" id="studio-fetch-models">获取可用模型</button>
-        <label id="studio-model-list-label" hidden>可用模型<select id="studio-model-list"></select></label>
-        <p class="studio-hint">可手填模型 ID。密钥保存在本机，测试连接会发送一次模型请求。</p>
-        <div class="studio-form-actions"><button type="button" id="studio-test-connection">测试已保存连接</button><button type="submit" class="studio-primary" id="studio-save-connection">保存连接</button></div>
-        <div class="studio-connection-tools">
-          <button class="studio-text" id="studio-use-connection" type="button" hidden>使用此连接创建 Agent →</button>
-          <button class="studio-text studio-remove" id="studio-remove-connection" type="button" hidden>移除连接…</button>
-        </div>
-        <p class="studio-hint" id="studio-connection-usage" hidden></p>
-        <div class="studio-confirm" id="studio-remove-confirm" role="group" aria-labelledby="studio-remove-question" hidden>
-          <p id="studio-remove-question"></p>
-          <div class="studio-form-actions"><button type="button" id="studio-cancel-remove">取消</button><button class="studio-remove" type="button" id="studio-confirm-remove">确认移除</button></div>
-        </div>
-      </form>
-    </fieldset>
-    <p id="studio-feedback" role="status" aria-live="polite" hidden></p>
-    <button id="studio-external" type="button" class="studio-text">通过 MCP 连接外部伙伴 ↗</button>
-  </dialog>
+  </section>
+        <p id="files-capability" class="panel-caption" hidden></p>
+        <div id="member-deliveries" aria-label="成员交付"></div>
+      </section>
+    </main>
+  </div>
+
+  <dialog id="connect-dialog" class="connect-dialog"><header><h2>把伙伴带进工作台</h2><button id="close-connect" aria-label="关闭连接指南">×</button></header><p>用已运行的 Agent 连接办公室，消息、执行步骤和 Visual 会出现在这里。</p><label for="mcp-address">MCP 地址</label><div class="copy-row"><input id="mcp-address" readonly><button id="copy-mcp">复制</button></div><ol><li>在 Agent 客户端添加这个 MCP 服务，并完成站点登录或服务认证。</li><li>使用稳定的 Agent ID 登记，然后持续读取私聊与群聊。</li><li>提交真实回复，汇报执行步骤，发布可视化成果。</li></ol><div class="capability-grid"><span>私聊与群聊</span><span>任务与在线状态</span><span>图表 / 表格 / 文档</span><span>交互 HTML / 执行步骤</span></div><p class="muted">当前通过外部 Agent 执行。添加一个名字不会启动模型；这里也不会继承 ChatGPT 的订阅或已连接工具。</p><details id="connection-config"><summary>查看 MCP 配置</summary><pre id="connection-code"></pre><a href="./hermes-setup.txt" download>下载 Hermes 接入说明</a></details></dialog>
   <dialog id="install-dialog" class="connect-dialog install-dialog" aria-labelledby="install-title"><header><h2 id="install-title">把 Agent Office 装成应用</h2><button id="close-install" aria-label="关闭安装说明">×</button></header><p>安装后它会出现在主屏幕、程序坞或开始菜单，在独立窗口里打开，登录状态和数据与网页版相同。</p><ol><li><b>iPhone / iPad（Safari）</b>：点底部「分享」，选「添加到主屏幕」。</li><li><b>Mac（Safari）</b>：菜单栏「文件」→「添加到程序坞」。</li><li><b>Chrome / Edge</b>：地址栏右侧的安装图标，或菜单里的「安装 Agent Office」。</li><li><b>Android（Chrome）</b>：菜单里的「安装应用」或「添加到主屏幕」。</li></ol><p class="muted">应用仍然连接你的办公室网站。断网时会显示离线提示，恢复网络后继续同步。</p></dialog>
   <div class="toast" id="toast" role="status" hidden></div>
-  <template id="taskbench-shell">
-    <a class="skip" href="#tb-prompt">跳到任务输入框</a>
-    <div class="tb-layout">
-      <aside class="tb-sidebar" id="tb-sidebar" aria-label="任务导航">
-        <div class="tb-brand"><img src="./favicon.svg" width="28" height="28" alt=""><strong>Agent Office</strong><button type="button" id="tb-hide-nav" class="tb-icon-button" aria-label="关闭任务导航" data-tb-icon="close"></button></div>
-        <button type="button" id="tb-new" class="tb-new"><span data-tb-icon="plus"></span>新任务</button>
-        <div class="tb-history-label"><h2>最近任务</h2><button type="button" id="tb-search-toggle" class="tb-icon-button" aria-label="搜索历史任务" aria-expanded="false" data-tb-icon="search"></button></div>
-        <input id="tb-search" type="search" aria-label="搜索任务或项目" placeholder="搜索任务或项目" hidden>
-        <nav id="tb-history" aria-label="最近任务"></nav>
-        <footer class="tb-sidebar-footer">
-          <a href="./?view=office"><span data-tb-icon="office"></span>协作办公室<span class="tb-trailing" data-tb-icon="arrow-up-right"></span></a>
-          <a href="./?view=office&amp;studio=1"><span data-tb-icon="settings"></span>Agent 与模型</a>
-        </footer>
-      </aside>
-      <button type="button" id="tb-scrim" class="tb-scrim" aria-label="收起任务导航" hidden></button>
-      <main class="tb-main">
-        <header class="tb-topbar">
-          <button type="button" id="tb-menu" class="tb-icon-button" aria-label="打开任务导航" aria-controls="tb-sidebar" aria-expanded="false" data-tb-icon="menu"></button>
-          <span class="tb-crumb"><span data-tb-icon="terminal"></span>项目工作台</span><span class="tb-divider" aria-hidden="true">/</span><span id="tb-breadcrumb">新任务</span>
-          <span id="tb-model" class="tb-model" role="status"><i></i><span>正在连接 Pi</span></span>
-        </header>
-        <div id="tb-scroll" class="tb-scroll"><div id="tb-content" class="tb-content tb-empty">
-          <section id="tb-intro" class="tb-intro"><span class="tb-terminal" data-tb-icon="terminal" aria-hidden="true"></span><h1>从项目开始</h1><p>选一个本地文件夹，把想完成的事交给 Pi。</p></section>
-          <div id="tb-session-head" class="tb-session-head" hidden><span class="tb-project-line"><span data-tb-icon="folder"></span><span id="tb-project-label"></span></span><h1 id="tb-title"></h1></div>
-          <div id="tb-turns" aria-label="任务对话"></div>
-          <div id="tb-checks" hidden></div>
-          <div id="tb-composer-wrap" class="tb-composer-wrap">
-            <p id="tb-error" class="tb-error" role="alert" hidden></p>
-            <form id="tb-form" class="tb-form">
-              <textarea id="tb-prompt" rows="3" maxlength="12000" aria-label="任务指令" placeholder="描述任务，或贴一段需要排查的问题…"></textarea>
-              <div class="tb-form-tools">
-                <button type="button" id="tb-folder" class="tb-folder" aria-label="选择项目文件夹"><span data-tb-icon="folder"></span><span id="tb-folder-name">选择项目</span><span class="tb-chevron" data-tb-icon="chevron"></span></button>
-                <div class="tb-submit-group"><span id="tb-shortcut" aria-hidden="true">⌘ ↵</span>
-                  <button type="button" id="tb-stop" class="tb-stop" hidden><span data-tb-icon="stop"></span>停止</button>
-                  <button type="submit" id="tb-send" aria-label="发送任务" title="发送任务" disabled><span data-tb-icon="up"></span></button>
-                </div>
-              </div>
-            </form>
-            <div id="tb-suggestions" class="tb-suggestions" aria-label="任务示例">
-              <button type="button" data-example="请梳理这个项目的目录结构、主要入口和模块之间的关系，列出相关文件。"><span data-tb-icon="tree"></span>梳理项目</button>
-              <button type="button" data-example="请检查这个项目的代码，找出一个值得修复的问题，说明复现条件和涉及的文件。"><span data-tb-icon="search"></span>查找问题</button>
-              <button type="button" data-example="请为项目中一个缺少测试的边界情况补充测试，并说明如何验证。"><span data-tb-icon="test"></span>补充测试</button>
-            </div>
-            <p id="tb-model-note" class="tb-model-note" role="status" hidden><span id="tb-model-note-text"></span> <a id="tb-model-note-link" href="./?view=office&amp;studio=1">查看 Agent 与模型 ↗</a></p>
-          </div>
-        </div></div>
-        <span class="tb-sr-only" id="tb-live" role="status" aria-live="polite"></span>
-      </main>
-    </div>
-    <dialog id="tb-path-dialog" class="tb-dialog" aria-labelledby="tb-path-title">
-      <form id="tb-path-form"><header><h2 id="tb-path-title">选择项目文件夹</h2><button type="button" id="tb-path-close" class="tb-icon-button" aria-label="关闭选择项目文件夹" data-tb-icon="close"></button></header>
-        <label for="tb-path">本机文件夹路径</label><input id="tb-path" maxlength="4096" required spellcheck="false" autocomplete="off" placeholder="/Users/…/Projects/my-app">
-        <p>Pi 会在这个文件夹内读取和修改项目文件。</p>
-        <div id="tb-list-projects"></div>
-        <footer><button type="button" class="tb-secondary" id="tb-path-cancel">取消</button><button type="submit" class="tb-primary" id="tb-confirm-path">使用此文件夹</button></footer>
-      </form>
-    </dialog>
-  </template>
   <script type="module" src="./start-workspace.js"></script>
 </body>
 </html>

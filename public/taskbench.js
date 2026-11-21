@@ -2,20 +2,7 @@ import {escapeHTML as esc, markdown} from './visual-renderer.js';
 import {mountProjectChecks} from './project-checks.js';
 
 const icons = {
-  plus: '<path d="M12 5v14M5 12h14"/>',
-  close: '<path d="m6 6 12 12M18 6 6 18"/>',
-  folder: '<path d="M3 7a2 2 0 0 1 2-2h5l2 2h7a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z"/>',
-  menu: '<rect x="3" y="4" width="18" height="16" rx="3"/><path d="M9 4v16"/>',
-  office: '<path d="m3 9 9-5 9 5-9 5ZM3 9v8l9 5 9-5V9M12 14v8"/>',
-  settings: '<path d="M3 7h7m4 0h7M3 17h10m4 0h4"/><circle cx="12" cy="7" r="2"/><circle cx="15" cy="17" r="2"/>',
-  'arrow-up-right': '<path d="M7 17 17 7M7 7h10v10"/>',
-  search: '<circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 4.5 4.5"/>',
-  tree: '<path d="M5 5v12a2 2 0 0 0 2 2h3M5 9h5"/><rect x="11" y="6" width="9" height="5" rx="1.5"/><rect x="11" y="16" width="9" height="5" rx="1.5"/>',
-  test: '<path d="M9 3h6m-5 0v6l-5 8a2 2 0 0 0 1.7 3h10.6a2 2 0 0 0 1.7-3l-5-8V3M8 14h8"/>',
   terminal: '<path d="m4 6 6 6-6 6m9 0h7"/>',
-  chevron: '<path d="m8 10 4 4 4-4"/>',
-  up: '<path d="M12 19V5m-6 6 6-6 6 6"/>',
-  stop: '<rect x="6" y="6" width="12" height="12" rx="2" fill="currentColor" stroke="none"/>',
   file: '<path d="M6 3h8l4 4v14H6ZM14 3v5h4"/>',
   change: '<path d="M8 3v11a4 4 0 0 0 4 4h2M5 6l3-3 3 3M16 21v-9a4 4 0 0 0-4-4h-1m2 10 3 3 3-3"/>'
 };
@@ -69,9 +56,9 @@ const MODEL_CHIP = {
 };
 const MODEL_NOTE = {
   starting: '正在加载本机模型，第一次启动通常要半分钟左右。可以先写好任务，就绪后再发送。',
-  failed: '本机 Pi 没能启动，可以检查模型设置后重新打开 Agent Office。',
+  failed: '本机 Pi 没能启动，请检查本地模型配置后重开办公室。',
   stopped: '本机模型已经停止。重新打开 Agent Office 后可以继续。',
-  off: '还没有配置本机模型。项目工作台需要本机 Pi，设置方法见「Agent 与模型」。'
+  off: '这位成员使用本机 Pi，请配置本地模型后继续。'
 };
 // Elapsed time for a running or finished step list: 45 秒, 3 分 05 秒, 1 小时 2 分.
 function duration(ms) {
@@ -93,7 +80,15 @@ export function shortPath(full = '') {
 }
 // A local model can spend minutes on one task; after this long, suggest how to unblock it.
 const SLOW_AFTER = 3 * 60 * 1000;
-const operation = {list: '查看目录', read: '读取', search: '搜索', write: '写入', edit: '编辑', test: '测试'};
+const operation = {
+  list: '查看目录',
+  read: '读取',
+  search: '搜索',
+  write: '写入',
+  edit: '编辑',
+  test: '测试',
+  report: '汇报'
+};
 const stamp = date => {
   if (!date) return '';
   const time = new Date(date);
@@ -139,7 +134,9 @@ function turnBody(turn) {
     '</div>' +
     '<div class="tb-agent-line"><span class="tb-pi-mark">' +
     icon('terminal') +
-    '</span><b>Pi</b>' +
+    '</span><b>' +
+    esc(turn.agentName || 'Pi') +
+    '</b>' +
     '<span class="tb-state" data-state="' +
     esc(turn.status) +
     '">' +
@@ -152,7 +149,11 @@ function turnBody(turn) {
         (running
           ? (activity.length
               ? '正在' + actionLabel(activity.at(-1)) + ' · 第 ' + activity.length + ' 步'
-              : '正在思考') +
+              : turn.kind === 'external'
+                ? turn.dispatchStatus === 'active'
+                  ? '成员已领取'
+                  : '等待成员领取'
+                : '正在思考') +
             ' · 已用 <span data-since="' +
             esc(turn.startedAt || '') +
             '">' +
@@ -168,7 +169,7 @@ function turnBody(turn) {
         activity.map(a => '<li>' + actionLabel(a) + '</li>').join('') +
         '</ol></details>'
       : '') +
-    (running && turn.startedAt
+    (running && (turn.kind || 'pi') === 'pi' && turn.startedAt
       ? '<p class="tb-slow" data-slow-since="' +
         esc(turn.startedAt) +
         '" hidden>本机模型处理得比较慢。如果几分钟都没有新进展，可以点「停止」，把任务说得更具体或拆小一些再试。</p>'
@@ -198,470 +199,415 @@ function turnBody(turn) {
       : '')
   );
 }
-export function openTaskbench() {
-  document.body.replaceChildren(document.getElementById('taskbench-shell').content.cloneNode(true));
-  document.body.className = 'taskbench';
-  document.title = '项目工作台 · Agent Office';
-  document.querySelectorAll('[data-tb-icon]').forEach(el => {
-    el.innerHTML = icon(el.dataset.tbIcon);
-  });
+// A single project controller is shared by the member panel. Every async result
+// is bound to its original member and selection, including a native picker reply.
+export function mountMemberProjects(mount) {
+  mount.innerHTML = `
+    <div class="tb-project-tools"><button id="tb-new" type="button">＋ 新任务</button>
+      <details id="tb-recent"><summary>历史任务</summary><div class="tb-history-pop">
+        <input type="search" id="tb-search" placeholder="搜索任务或项目" aria-label="搜索任务或项目"><nav id="tb-history" aria-label="项目任务列表"></nav>
+      </div></details><span id="tb-model" role="status"></span></div>
+    <p id="tb-notice" class="tb-notice"></p>
+    <div id="tb-scroll"><h3 id="tb-title" hidden></h3><div id="tb-turns" aria-label="项目任务对话"></div><div id="tb-checks" hidden></div></div>
+    <div id="tb-composer-wrap"><p id="tb-error" role="alert" hidden></p>
+      <form id="tb-form"><label class="sr-only" for="tb-prompt">项目任务指令</label>
+        <textarea id="tb-prompt" rows="3" maxlength="12000" placeholder="描述这个项目里要完成的事…"></textarea>
+        <div class="tb-controls"><button type="button" id="tb-folder" aria-label="选择项目文件夹"></button>
+          <button type="button" id="tb-stop" hidden>停止任务</button><button type="submit" id="tb-send" aria-label="发送任务">发送任务</button></div>
+      </form></div>
+    <dialog id="tb-path-dialog" class="tb-dialog" aria-labelledby="tb-path-title"><form id="tb-path-form">
+      <h3 id="tb-path-title">选择项目文件夹</h3><label for="tb-path">本机文件夹路径</label>
+      <input id="tb-path" required maxlength="4096" spellcheck="false" autocomplete="off" placeholder="/Users/…/Projects/my-app">
+      <div id="tb-list-projects"></div><footer><button id="tb-path-cancel" type="button">取消</button><button id="tb-confirm-path" type="submit">使用此文件夹</button></footer>
+    </form></dialog>`;
   mountProjectChecks(byId('checks'));
-  // Running steps show a live elapsed time; after a few minutes, a hint on how to unblock.
-  setInterval(() => {
-    const now = Date.now();
-    for (const el of document.querySelectorAll('[data-since]')) {
-      const since = Date.parse(el.dataset.since);
-      if (Number.isFinite(since)) el.textContent = duration(now - since);
-    }
-    for (const el of document.querySelectorAll('[data-slow-since]'))
-      el.hidden = now - Date.parse(el.dataset.slowSince) < SLOW_AFTER;
-  }, 1000);
-  const prompt = byId('prompt');
-  const small = matchMedia('(max-width: 760px)');
-  const mac = /Mac|iPad|iPhone/.test(navigator.platform);
-  byId('shortcut').textContent = mac ? '⌘ ↵' : 'Ctrl ↵';
-  byId('send').title = '发送任务（' + (mac ? '⌘' : 'Ctrl') + ' + Enter）';
-  let index = [],
-    ready = null,
-    modelStatus = null,
-    session = null,
+  const prompt = byId('prompt'),
+    dialog = byId('path-dialog');
+  let agent = null,
+    capability = null,
     activeId = null,
-    project = '',
-    busy = false,
-    loading = false;
-  let revision = 0,
+    session = null,
+    folder = '',
+    rows = [],
+    revision = 0,
     timer,
-    polling = false,
-    historySignature,
-    openNav = false,
-    connectionError = false;
-  const turnSignatures = new Map();
-  const draftKey = () => 'draft-' + (activeId || 'new');
-  const route = () => '/' + encodeURIComponent(activeId);
-  const newest = () => session?.turns.at(-1);
-  function report(text, isNetwork = false) {
-    const box = byId('error');
-    box.textContent = text || '';
-    box.hidden = !text;
-    connectionError = isNetwork;
+    busy = false,
+    fetching = false,
+    pendingDetail = false,
+    retryNetwork = false,
+    checkStatus = '';
+  const signature = new Map();
+  const memberKey = () => agent?.id || '';
+  const draftKey = () => 'draft-' + (activeId || (memberKey() === 'pi-local' ? 'new' : memberKey() + '-new'));
+  const folderKey = () => (memberKey() === 'pi-local' ? 'folder' : 'folder-' + memberKey());
+  const list = () => api('?agentId=' + encodeURIComponent(memberKey()));
+  const changed = () => document.dispatchEvent(new Event('office-project-change'));
+  function message(text, network = false) {
+    byId('error').textContent = text || '';
+    byId('error').hidden = !text;
+    retryNetwork = network;
   }
-  function nav(show, returnFocus = true) {
-    openNav = show;
-    const mobileOpen = small.matches && show;
-    byId('sidebar').classList.toggle('tb-open', mobileOpen);
-    byId('sidebar').inert = small.matches && !mobileOpen;
-    byId('scrim').hidden = !mobileOpen;
-    document.querySelector('.tb-main').inert = mobileOpen;
-    byId('menu').setAttribute('aria-expanded', String(mobileOpen));
-    if (mobileOpen) byId('new').focus();
-    else if (small.matches && returnFocus) byId('menu').focus();
-  }
-  function writePrompt(value) {
-    prompt.value = value || '';
-    storage.write(draftKey(), value || null);
-    refreshControls();
-  }
-  function renderHistory() {
-    const filter = byId('search').value.trim().toLowerCase();
-    const rows = index.filter(x => (x.title + ' ' + x.projectPath).toLowerCase().includes(filter));
-    const signature = JSON.stringify([rows, activeId, filter]);
-    if (historySignature === signature) return;
-    historySignature = signature;
-    const list = byId('history');
-    const focused = document.activeElement?.dataset.session;
-    list.innerHTML =
-      rows
-        .map(
-          row =>
-            '<button type="button" data-session="' +
-            esc(row.id) +
-            '" aria-current="' +
-            (row.id === activeId ? 'page' : 'false') +
-            '">' +
-            '<span class="tb-row-title">' +
-            esc(row.title || basename(row.projectPath)) +
-            '</span><small>' +
-            esc(basename(row.projectPath)) +
-            (row.status === 'running' ? '<i>执行中</i>' : '') +
-            '</small></button>'
-        )
-        .join('') || '<p>' + (filter ? '没有匹配的任务' : '暂无任务') + '</p>';
-    if (focused)
-      [...list.querySelectorAll('button')]
-        .find(button => button.dataset.session === focused)
-        ?.focus({preventScroll: true});
-  }
-  function renderProject() {
-    byId('folder-name').textContent = project ? basename(project) : '选择项目';
-    byId('folder').title = project || '选择本机文件夹';
-    byId('folder').setAttribute('aria-label', activeId ? '当前项目：' + project : '选择项目文件夹');
-    byId('project-label').textContent = shortPath(project);
-    byId('project-label').title = project;
-    const hasSession = Boolean(activeId);
-    byId('content').classList.toggle('tb-empty', !hasSession);
-    byId('intro').hidden = byId('suggestions').hidden = hasSession;
-    byId('session-head').hidden = !hasSession;
-    byId('title').textContent = session?.title || (loading ? '正在打开任务…' : basename(project)) || '';
-    byId('breadcrumb').textContent = hasSession ? basename(project) || '任务' : '新任务';
-    prompt.placeholder = hasSession ? '继续这个任务，或说明下一步想改什么…' : '描述任务，或贴一段需要排查的问题…';
-  }
-  function refreshControls() {
-    const running = session?.status === 'running' || newest()?.status === 'running';
-    byId('send').hidden = Boolean(running);
-    byId('stop').hidden = !running;
-    byId('shortcut').hidden = Boolean(running);
-    byId('send').disabled = busy || loading || ready !== true || !prompt.value.trim();
-    byId('stop').disabled = busy || loading;
-    byId('folder').disabled = busy || loading || !!activeId;
-    byId('new').disabled = busy;
-    prompt.disabled = loading;
-    // Loading a local model takes a while; say so calmly instead of looking like an error.
-    const state = ready === true ? 'ready' : modelStatus?.state || (ready === false ? 'off' : 'connecting');
-    const model = byId('model');
-    model.classList.toggle('tb-ready', state === 'ready');
-    model.dataset.state = state;
-    model.querySelector('span').textContent = MODEL_CHIP[state] || MODEL_CHIP.connecting;
-    const note = MODEL_NOTE[state];
-    byId('model-note').hidden = !note;
-    if (note) {
-      byId('model-note').dataset.tone = state === 'starting' ? 'info' : 'warn';
-      byId('model-note-text').textContent =
-        state === 'failed' && modelStatus?.error ? note + '原因：' + modelStatus.error : note;
-      byId('model-note-link').hidden = !['failed', 'off'].includes(state);
-    }
-    byId('turns')
-      .querySelectorAll('[data-retry]')
-      .forEach(b => {
-        b.disabled = busy || loading || running || ready !== true;
-      });
-  }
-  function renderTurns() {
-    const container = byId('turns');
-    for (const t of session?.turns || []) {
-      const signature = JSON.stringify(t);
-      if (turnSignatures.get(t.id) === signature) continue;
-      turnSignatures.set(t.id, signature);
-      let article = document.getElementById('tb-turn-' + t.id);
-      if (!article) {
-        article = document.createElement('article');
-        article.className = 'tb-turn';
-        article.id = 'tb-turn-' + t.id;
-        container.append(article);
-      }
-      const open = [...article.querySelectorAll('details[open]')].map(el => el.querySelector('summary').textContent);
-      const activityOpen = Boolean(article.querySelector('.tb-activity[open]'));
-      article.innerHTML = turnBody(t);
-      article.querySelectorAll('details').forEach(el => {
-        el.open =
-          (el.className === 'tb-activity' && activityOpen) || open.includes(el.querySelector('summary').textContent);
-      });
-    }
-    const reviews = [...container.querySelectorAll('.tb-review')];
-    for (const review of reviews) review.removeAttribute('id');
-    if (reviews.length) reviews.at(-1).id = 'tb-review';
-  }
-  function apply(next) {
-    if (!next || next.id !== activeId) return;
-    const oldTurn = newest();
-    const was = session?.status;
-    const scroll = byId('scroll');
-    const nearBottom = scroll.scrollHeight - scroll.scrollTop - scroll.clientHeight < 100;
-    session = next;
-    project = next.projectPath;
-    if (was !== next.status)
-      document.dispatchEvent(new CustomEvent('taskbench:session', {detail: {id: activeId, status: next.status}}));
-    const {turns, ...summary} = next;
-    index = [summary, ...index.filter(x => x.id !== next.id)].sort(
-      (a, b) => new Date(b.updatedAt) - new Date(a.updatedAt)
-    );
-    renderProject();
-    renderHistory();
-    renderTurns();
-    refreshControls();
-    const turn = newest();
-    if (turn && (oldTurn?.id !== turn.id || oldTurn.status !== turn.status))
-      byId('live').textContent = 'Pi ' + turnStatus[turn.status];
-    if (nearBottom)
-      requestAnimationFrame(() => {
-        scroll.scrollTop = scroll.scrollHeight;
-      });
-  }
-  function choose(id, value = null, {savedPrompt, focus = false} = {}) {
-    ++revision;
-    activeId = id || null;
-    session = null;
-    loading = !!id && !value;
-    project =
-      value?.projectPath || (id ? index.find(x => x.id === id)?.projectPath || '' : storage.read('folder') || '');
-    turnSignatures.clear();
-    byId('turns').replaceChildren();
-    prompt.value = savedPrompt ?? storage.read(draftKey()) ?? '';
-    if (savedPrompt !== undefined) storage.write(draftKey(), savedPrompt || null);
+  function setUrl() {
     const url = new URL(location.href);
     if (activeId) url.searchParams.set('task', activeId);
     else url.searchParams.delete('task');
     history.replaceState(null, '', url);
-    storage.write('last-task', activeId);
-    report('');
-    renderProject();
-    renderHistory();
-    refreshControls();
-    document.dispatchEvent(
-      new CustomEvent('taskbench:session', {
-        detail: {id: activeId, status: value?.status || (loading ? 'loading' : 'idle')}
-      })
-    );
-    if (value) apply(value);
-    if (focus) prompt.focus({preventScroll: true});
   }
-  async function select(id) {
-    if (busy) return;
-    nav(false, false);
-    if (activeId === id && (session || !id)) {
-      prompt.focus();
-      return;
+  function signalChecks() {
+    const status = activeId ? session?.status || 'loading' : 'idle';
+    const key = (activeId || '') + ':' + status;
+    if (checkStatus !== key)
+      document.dispatchEvent(new CustomEvent('taskbench:session', {detail: {id: activeId, status}}));
+    checkStatus = key;
+  }
+  function controls() {
+    const running = session?.status === 'running';
+    const available = capability?.available === true;
+    byId('send').hidden = !!running;
+    byId('send').disabled = !available || !prompt.value.trim() || busy || pendingDetail;
+    byId('stop').hidden = !running;
+    byId('stop').disabled = busy;
+    byId('folder').disabled = !!activeId || busy;
+    byId('folder').textContent = folder ? '▱ ' + basename(folder) : '▱ 选择文件夹';
+    byId('folder').title = folder ? shortPath(folder) : '选择项目文件夹';
+    byId('new').disabled = busy;
+    byId('search').disabled = busy;
+    prompt.placeholder = activeId ? '继续这个任务，或说明下一步想改什么…' : '描述这个项目里要完成的事…';
+    byId('turns')
+      .querySelectorAll('[data-retry]')
+      .forEach(b => {
+        b.disabled = busy || !available || running;
+      });
+    const kind = capability?.kind,
+      state = capability?.localStatus?.state;
+    byId('model').textContent = !capability
+      ? '正在连接…'
+      : !capability.enabled
+        ? '成员已停用'
+        : kind === 'pi'
+          ? MODEL_CHIP[state] || (available ? MODEL_CHIP.ready : MODEL_CHIP.off)
+          : kind === 'api'
+            ? capability.modelLabel || '模型 API'
+            : '外部 MCP';
+    byId('notice').textContent = !capability
+      ? ''
+      : kind === 'external'
+        ? '任务和目录路径将交给该成员的 MCP 客户端。执行步骤由客户端汇报，本面板展示客户端汇报的步骤和结果。'
+        : kind === 'api'
+          ? '此成员会将任务及本轮工具读取的文件内容发送到所选模型连接。'
+          : !available
+            ? MODEL_NOTE[state] || '本机模型暂不可用。'
+            : '';
+    byId('notice').hidden = !byId('notice').textContent;
+    byId('title').textContent = session?.title || '';
+    byId('title').hidden = !session;
+    signalChecks();
+  }
+  function historyList() {
+    const q = byId('search').value.trim().toLowerCase(),
+      host = byId('history');
+    const items = rows.filter(r => (r.title + ' ' + r.projectPath).toLowerCase().includes(q));
+    const html =
+      items
+        .map(
+          r =>
+            '<button type="button" data-session="' +
+            esc(r.id) +
+            '" aria-current="' +
+            (r.id === activeId) +
+            '">' +
+            esc(r.title) +
+            '<small>' +
+            esc(basename(r.projectPath)) +
+            (r.status === 'running' ? ' · 执行中' : '') +
+            '</small></button>'
+        )
+        .join('') || '<p>没有匹配的任务</p>';
+    if (host.dataset.content !== html) {
+      host.innerHTML = html;
+      host.dataset.content = html;
     }
-    choose(id, null, {focus: !id});
-    if (!id) return;
-    const token = revision;
-    try {
-      const data = await api(route());
-      if (token === revision) {
-        loading = false;
-        apply(data.session);
+  }
+  function render(next) {
+    if (!agent || !next || next.id !== activeId || next.agentId !== memberKey()) return;
+    const scroll = byId('scroll'),
+      near = scroll.scrollHeight - scroll.scrollTop - scroll.clientHeight < 120;
+    const last = session?.turns.at(-1);
+    const current = next.turns.at(-1);
+    let didChange = false;
+    session = next;
+    folder = next.projectPath;
+    pendingDetail = false;
+    for (const turn of next.turns) {
+      const serial = JSON.stringify(turn);
+      if (signature.get(turn.id) === serial) continue;
+      didChange = true;
+      signature.set(turn.id, serial);
+      let el = byId('turn-' + turn.id);
+      if (!el) {
+        el = document.createElement('article');
+        el.className = 'tb-turn';
+        el.id = 'tb-turn-' + turn.id;
+        byId('turns').append(el);
       }
-    } catch (error) {
-      if (token !== revision) return;
-      if (error.status === 404) choose(null);
-      report(error.message, !error.status);
+      const open = [...el.querySelectorAll('details')].map(d => d.open);
+      el.innerHTML = turnBody(turn);
+      el.querySelectorAll('details').forEach((d, i) => {
+        d.open = !!open[i];
+      });
     }
+    byId('turns')
+      .querySelectorAll('.tb-review')
+      .forEach((r, i, all) => {
+        r.id = i === all.length - 1 ? 'tb-review' : '';
+      });
+    controls();
+    for (const el of byId('turns').querySelectorAll('[data-since]')) {
+      const since = Date.parse(el.dataset.since);
+      if (Number.isFinite(since)) el.textContent = duration(Date.now() - since);
+    }
+    for (const el of byId('turns').querySelectorAll('[data-slow-since]'))
+      el.hidden = Date.now() - Date.parse(el.dataset.slowSince) < SLOW_AFTER;
+    if (near && didChange)
+      requestAnimationFrame(() => {
+        scroll.scrollTop = scroll.scrollHeight;
+      });
+    if (last?.status !== current?.status || last?.activity?.length !== current?.activity?.length) changed();
+  }
+  function choose(id, value = null, savedPrompt) {
+    revision++;
+    activeId = id || null;
+    session = null;
+    pendingDetail = !!id && !value;
+    clearTimeout(timer);
+    signature.clear();
+    byId('turns').replaceChildren();
+    folder =
+      value?.projectPath || (id ? rows.find(r => r.id === id)?.projectPath || '' : storage.read(folderKey()) || '');
+    prompt.value = savedPrompt ?? storage.read(draftKey()) ?? '';
+    if (savedPrompt !== undefined) storage.write(draftKey(), savedPrompt || null);
+    storage.write('last-task-' + memberKey(), activeId);
+    setUrl();
+    message('');
+    controls();
+    historyList();
+    if (value) render(value);
   }
   async function sync() {
     clearTimeout(timer);
-    if (polling) return;
-    polling = true;
-    const token = revision;
-    try {
-      if (!busy && !document.hidden) {
-        const [list, detail] = await Promise.all([api(), activeId ? api(route()) : null]);
-        if (token === revision && !busy) {
-          index = list.sessions;
-          ready = list.localAvailable;
-          modelStatus = list.localStatus || null;
-          if (connectionError) report('');
-          if (detail) {
-            loading = false;
-            apply(detail.session);
-          } else {
-            renderHistory();
-            refreshControls();
-          }
+    if (!agent || mount.hidden) return;
+    const version = revision;
+    if (!fetching && !busy && !document.hidden) {
+      fetching = true;
+      try {
+        const [catalog, detail] = await Promise.all([list(), activeId ? api('/' + activeId) : null]);
+        if (version !== revision || !agent || busy) return;
+        capability = catalog.member && {...catalog.member, localStatus: catalog.localStatus};
+        rows = catalog.sessions;
+        historyList();
+        if (retryNetwork) message('');
+        if (detail?.session?.agentId === memberKey()) render(detail.session);
+        else if (detail) choose(null);
+        else controls();
+      } catch (e) {
+        if (version === revision && agent) {
+          if (e.status === 404) choose(null);
+          message(e.message, true);
+        }
+      } finally {
+        fetching = false;
+        if (agent && !mount.hidden) {
+          clearTimeout(timer);
+          timer = setTimeout(sync, session?.status === 'running' ? 850 : 2500);
         }
       }
-    } catch (error) {
-      if (token === revision) {
-        if (error.status === 404 && activeId) choose(null);
-        report(error.message, true);
-      }
-    } finally {
-      polling = false;
-      timer = setTimeout(sync, session?.status === 'running' ? 900 : ready !== true ? 2200 : 5000);
-    }
+    } else timer = setTimeout(sync, 1000);
   }
-  function setFolder(path) {
-    project = path;
-    storage.write('folder', path);
-    report('');
-    renderProject();
-    refreshControls();
-    prompt.focus();
+  function hide() {
+    revision++;
+    agent = null;
+    busy = false;
+    clearTimeout(timer);
+    activeId = null;
+    session = null;
+    if (dialog.open) dialog.close('');
+    signalChecks();
   }
-  function manualFolder() {
-    const paths = [...new Set([project, ...index.map(s => s.projectPath)].filter(Boolean))].slice(0, 4);
-    const el = byId('list-projects');
-    el.innerHTML = paths.length
-      ? '<h3>最近使用</h3>' +
-        paths
-          .map(
-            path =>
-              '<button type="button" data-path="' +
-              esc(path) +
-              '">' +
-              icon('folder') +
-              '<span>' +
-              esc(path) +
-              '</span></button>'
-          )
-          .join('')
-      : '';
-    byId('path').value = project;
-    byId('path').setCustomValidity('');
-    const dialog = byId('path-dialog');
-    dialog.returnValue = '';
-    const result = new Promise(resolve =>
-      dialog.addEventListener('close', () => resolve(dialog.returnValue), {once: true})
-    );
-    dialog.showModal();
-    byId('path').focus();
-    return result;
+  function selectFolder(path) {
+    folder = path;
+    storage.write(folderKey(), path);
+    message('');
+    controls();
+    prompt.focus({preventScroll: true});
   }
-  async function chooseFolder() {
-    const picker = window.webkit?.messageHandlers?.chooseProjectFolder;
-    if (picker) {
+  async function pick() {
+    const version = revision;
+    let path;
+    const native = window.webkit?.messageHandlers?.chooseProjectFolder;
+    if (native) {
       try {
-        const path = await picker.postMessage(null);
-        if (typeof path === 'string' && path) setFolder(path);
-        return path;
-      } catch {
-        /* Manual input is available when the system picker cannot open. */
-      }
+        path = await native.postMessage(null);
+      } catch {}
     }
-    const path = await manualFolder();
-    if (path) setFolder(path);
+    if (version !== revision || !agent) return;
+    if (path === undefined) {
+      const recent = [...new Set(rows.map(r => r.projectPath))].slice(0, 4);
+      byId('list-projects').innerHTML = recent
+        .map(p => '<button data-path="' + esc(p) + '" type="button">' + esc(shortPath(p)) + '</button>')
+        .join('');
+      byId('path').value = folder;
+      byId('path').setCustomValidity('');
+      dialog.returnValue = '';
+      const closed = new Promise(resolve =>
+        dialog.addEventListener('close', () => resolve(dialog.returnValue), {once: true})
+      );
+      dialog.showModal();
+      byId('path').focus();
+      path = await closed;
+    }
+    if (version !== revision || typeof path !== 'string' || !path) return;
+    selectFolder(path);
     return path;
   }
-  // Preserve identifiers across uncertain responses, including a reload after sending.
-  function requestId(key, content) {
+  function idFor(key, value) {
     const saved = storage.read(key);
-    if (saved?.content === content) return saved.id;
+    if (saved?.value === value) return saved.id;
     const id = crypto.randomUUID();
-    storage.write(key, {content, id});
+    storage.write(key, {value, id});
     return id;
   }
-  async function send(text = prompt.value, isRetry = false) {
+  async function send(text = prompt.value, retry = false) {
     const content = text.trim();
-    if (!content || busy || loading || ready !== true || session?.status === 'running') return;
-    if (!project && !(await chooseFolder())) return;
+    if (!agent || busy || pendingDetail || !content || !capability?.available || session?.status === 'running') return;
+    const agentId = memberKey();
+    if (!folder && !(await pick())) return;
+    if (agentId !== memberKey() || busy) return;
     busy = true;
-    ++revision;
-    report('');
-    refreshControls();
+    let ticket = ++revision;
+    message('');
+    controls();
     try {
-      if (!activeId) {
-        const title = content.split('\n')[0].slice(0, 80);
-        const data = await api('', {
-          projectPath: project,
-          title,
-          requestId: requestId('pending-new', project + '\n' + title)
-        });
-        choose(data.session.id, data.session, {savedPrompt: prompt.value});
-        storage.write('draft-new', null);
-        storage.write('pending-new', null);
+      let targetId = activeId;
+      if (!targetId) {
+        const title = content.split('\n')[0].slice(0, 80),
+          key = 'pending-new-' + agentId,
+          oldDraft = draftKey();
+        const data = await api('', {agentId, title, projectPath: folder, requestId: idFor(key, folder + '\n' + title)});
+        targetId = data.session.id;
+        if (ticket === revision) {
+          choose(targetId, data.session, prompt.value);
+          ticket = revision;
+          storage.write(oldDraft, null);
+        }
+        storage.write(key, null);
       }
-      const key = 'pending-' + activeId;
-      const data = await api(route() + '/messages', {content, requestId: requestId(key, content)});
+      const key = 'pending-' + targetId;
+      const data = await api('/' + targetId + '/messages', {requestId: idFor(key, content), content});
       storage.write(key, null);
-      if (!isRetry && prompt.value.trim() === content) writePrompt('');
-      apply(data.session);
-    } catch (error) {
-      report(error.message || '发送失败，请重试。');
+      changed();
+      if (ticket !== revision) return;
+      if (!retry && prompt.value.trim() === content) {
+        prompt.value = '';
+        storage.write(draftKey(), null);
+      }
+      render(data.session);
+    } catch (e) {
+      if (ticket === revision) message(e.message);
     } finally {
-      busy = false;
-      refreshControls();
-      sync();
+      if (ticket === revision) {
+        busy = false;
+        controls();
+        void sync();
+      }
     }
   }
   async function stop() {
     if (!activeId || busy) return;
+    const ticket = ++revision;
     busy = true;
-    ++revision;
-    report('');
-    refreshControls();
+    controls();
     try {
-      const {session: result} = await api(route() + '/stop', {});
-      apply(result);
-    } catch (error) {
-      report(error.message);
+      const data = await api('/' + activeId + '/stop', {});
+      changed();
+      if (ticket === revision) render(data.session);
+    } catch (e) {
+      if (ticket === revision) message(e.message);
     } finally {
-      busy = false;
-      refreshControls();
-      sync();
+      if (ticket === revision) {
+        busy = false;
+        controls();
+        void sync();
+      }
     }
   }
+  async function open(member, {taskId, newTask = false, pickFolder = false} = {}) {
+    hide();
+    agent = member;
+    mount.hidden = false;
+    rows = [];
+    capability = null;
+    byId('search').value = '';
+    byId('recent').open = false;
+    const saved = storage.read('last-task-' + member.id);
+    choose(newTask ? null : taskId || saved || null);
+    await sync();
+    if (agent?.id !== member.id) return;
+    if (pickFolder && !activeId) await pick();
+  }
   byId('new').onclick = () => {
-    if (!activeId) {
-      nav(false, false);
+    if (!busy) {
+      choose(null);
+      void sync();
       prompt.focus();
-    } else select(null);
+    }
   };
-  byId('menu').onclick = () => nav(true);
-  byId('hide-nav').onclick = byId('scrim').onclick = () => nav(false);
-  byId('history').onclick = e => {
-    const id = e.target.closest('[data-session]')?.dataset.session;
-    if (id) select(id);
-  };
-  byId('search-toggle').onclick = () => {
-    const search = byId('search');
-    search.hidden = !search.hidden;
-    byId('search-toggle').setAttribute('aria-expanded', String(!search.hidden));
-    if (search.hidden) {
-      search.value = '';
-      renderHistory();
-    } else search.focus();
-  };
-  byId('search').oninput = renderHistory;
-  byId('folder').onclick = chooseFolder;
-  byId('path-close').onclick = byId('path-cancel').onclick = () => byId('path-dialog').close();
+  byId('folder').onclick = pick;
+  byId('path-cancel').onclick = () => dialog.close('');
   byId('list-projects').onclick = e => {
-    const path = e.target.closest('[data-path]')?.dataset.path;
-    if (path) byId('path-dialog').close(path);
+    const p = e.target.closest('[data-path]')?.dataset.path;
+    if (p) dialog.close(p);
   };
   byId('path').oninput = () => byId('path').setCustomValidity('');
   byId('path-form').onsubmit = e => {
     e.preventDefault();
-    const input = byId('path'),
-      path = input.value.trim();
-    if (!/^(?:\/|[a-z]:[\\/]|\\\\)/i.test(path)) {
-      input.setCustomValidity('请输入从根目录开始的完整路径。');
-      input.reportValidity();
+    const path = byId('path').value.trim();
+    if (!/^(?:\/|[a-z]:[\\/]|\\\\\\\\)/i.test(path)) {
+      byId('path').setCustomValidity('请输入本机文件夹的绝对路径。');
+      byId('path').reportValidity();
       return;
     }
-    byId('path-dialog').close(path);
+    dialog.close(path);
   };
+  byId('history').onclick = e => {
+    const id = e.target.closest('[data-session]')?.dataset.session;
+    if (!id || busy) return;
+    byId('recent').open = false;
+    choose(id);
+    void sync();
+  };
+  byId('search').oninput = historyList;
   byId('form').onsubmit = e => {
     e.preventDefault();
-    send();
+    void send();
   };
   byId('stop').onclick = stop;
   prompt.oninput = () => {
     storage.write(draftKey(), prompt.value || null);
-    refreshControls();
+    controls();
   };
   prompt.onkeydown = e => {
     if (!e.isComposing && (e.metaKey || e.ctrlKey) && e.key === 'Enter') {
       e.preventDefault();
-      send();
-    }
-  };
-  byId('suggestions').onclick = e => {
-    const example = e.target.closest('[data-example]')?.dataset.example;
-    if (example) {
-      writePrompt(example);
-      prompt.focus();
+      void send();
     }
   };
   byId('turns').onclick = e => {
-    const summary = e.target.closest('.tb-file summary');
-    if (summary && !summary.parentElement.open)
-      requestAnimationFrame(() => {
-        const file = summary.parentElement.getBoundingClientRect();
-        const visibleBottom = byId('composer-wrap').getBoundingClientRect().top;
-        const visibleTop = byId('scroll').getBoundingClientRect().top;
-        const offset = Math.min(file.bottom - visibleBottom + 8, file.top - visibleTop - 8);
-        if (offset > 0) byId('scroll').scrollTop += offset;
-      });
     const id = e.target.closest('[data-retry]')?.dataset.retry;
     const turn = id && session?.turns.find(t => t.id === id);
-    if (turn) send(turn.prompt, true);
+    if (turn) void send(turn.prompt, true);
   };
-  document.addEventListener('keydown', e => {
-    if (e.key === 'Escape' && openNav) nav(false);
-  });
-  small.addEventListener('change', () => nav(false, false));
   document.addEventListener('visibilitychange', () => {
-    if (!document.hidden) sync();
+    if (!document.hidden && agent) void sync();
   });
-  nav(false, false);
-  choose(new URLSearchParams(location.search).get('task') || storage.read('last-task') || null);
-  sync();
+  return {open, hide};
 }

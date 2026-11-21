@@ -1,0 +1,33 @@
+# Runs the same checks as before a release: syntax and formatting, unit tests and the
+# browser tests. macOS matches the desktop app and already has Chrome and Python 3.
+name: Checks
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: checks-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: macos-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm run check
+      - run: npm test
+      - name: Browser tests
+        run: npm run test:browser
+        env:
+          CHROMIUM_EXECUTABLE_PATH: /Applications/Google Chrome.app/Contents/MacOS/Google Chrome
