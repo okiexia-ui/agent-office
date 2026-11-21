@@ -2,7 +2,7 @@ import {DESKS, assignSeats} from '../public/layout.js';
 import {WORKSPACE_TOOLS, callWorkspaceTool} from './workspace.js';
 // Authentication is enforced by the owner-private Sites gateway, for both browsers
 // and MCP/service callers. No API credential is shipped in browser assets.
-export const VERSION = '2.8.0';
+export const VERSION = '2.9.0';
 const STATE_KEY = 'office/state-v2.json';
 const MODELS = ['Hermes', 'ChatGPT', 'Claude', 'Codex', 'Gemini', 'Kimi', 'Grok', '豆包', 'DeepSeek', 'Pi', 'API'];
 const STATUSES = ['working', 'thinking', 'resting'];

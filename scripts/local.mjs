@@ -2,7 +2,7 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import {createHash} from 'node:crypto';
-import {spawn} from 'node:child_process';
+import {execFile, spawn} from 'node:child_process';
 import {parseEnv} from 'node:util';
 import lockfile from 'proper-lockfile';
 import {startOfficeServer} from './dev.mjs';
@@ -70,8 +70,12 @@ if (!shared) {
   delete env.OFFICE_REMOTE_ORIGIN;
   delete env.AGENT_OFFICE_TOKEN;
 }
+// Where `npm run pi:install` (or the workbench's install button) puts the Pi CLI. The Mac app
+// points this at its configured office so an install survives app updates.
+const piRuntimeDir = path.resolve(env.OFFICE_PI_RUNTIME_DIR || path.join(root, '.office-local', 'pi-runtime'));
+const piRuntimeBin = path.join(piRuntimeDir, 'node_modules', '.bin', 'pi');
 if (!env.OFFICE_PI_BIN) {
-  const bundled = path.join(root, '.office-local/pi-runtime/node_modules/.bin/pi');
+  const bundled = piRuntimeBin;
   env.OFFICE_PI_BIN = (await fs.access(bundled).then(
     () => true,
     () => false
@@ -160,6 +164,11 @@ async function desktopControl(request) {
   if (url.pathname === '/api/local/pi' && request.method === 'GET')
     return Response.json(await piSetup(), {headers: {'Cache-Control': 'no-store'}});
   if (url.pathname === '/api/local/pi' && request.method === 'POST') return savePiSetup(request);
+  if (url.pathname === '/api/local/pi/install' && request.method === 'POST') {
+    if (shared) return Response.json({error: '共享办公室不能在这里安装。'}, {status: 409});
+    installPi();
+    return Response.json({install: piInstall}, {status: 202});
+  }
   if (url.pathname === '/api/local/shutdown' && request.method === 'POST') {
     console.log('收到停止请求，正在关闭办公室和本机模型…');
     setTimeout(() => controller.abort(), 50);
@@ -223,6 +232,67 @@ function restartPi() {
   return piSwitch;
 }
 
+// The same pinned install as `npm run pi:install`, started from Pi's settings.
+let piInstall = {state: 'idle'};
+async function piPackage() {
+  const {scripts} = JSON.parse(await fs.readFile(path.join(root, 'package.json'), 'utf8'));
+  const spec = scripts?.['pi:install']?.match(/@earendil-works\/pi-coding-agent@[\w.-]+/)?.[0];
+  if (!spec) throw new Error('找不到 Pi 运行环境的版本信息。');
+  return spec;
+}
+function installPi() {
+  if (piInstall.state === 'running') return;
+  piInstall = {state: 'running'};
+  (async () => {
+    const spec = await piPackage();
+    const bundledNpm = path.join(path.dirname(process.execPath), 'npm');
+    const npm =
+      env.OFFICE_NPM_BIN ||
+      ((await fs.access(bundledNpm).then(
+        () => true,
+        () => false
+      ))
+        ? bundledNpm
+        : 'npm');
+    await fs.mkdir(piRuntimeDir, {recursive: true});
+    const args = [
+      'install',
+      '--prefix',
+      piRuntimeDir,
+      '--ignore-scripts',
+      '--save-exact',
+      '--no-audit',
+      '--no-fund',
+      spec
+    ];
+    await new Promise((resolve, reject) =>
+      execFile(
+        npm,
+        args,
+        {env: process.env, timeout: 300000, maxBuffer: 4 * 1024 * 1024, signal},
+        (error, _out, err) => (error ? reject(Object.assign(error, {detail: String(err || '').trim()})) : resolve())
+      )
+    );
+    await fs.access(piRuntimeBin);
+    env.OFFICE_PI_BIN = piRuntimeBin;
+    piCli = {at: 0};
+    piInstall = {state: 'done'};
+    console.log('已安装 Pi 运行环境：' + spec);
+  })().catch(error => {
+    const detail = (error.detail || '').split('\n').filter(Boolean).slice(-3).join(' ').slice(0, 400);
+    piInstall = {
+      state: 'failed',
+      error:
+        error.code === 'ENOENT'
+          ? '找不到 npm。请安装 Node.js 后重试。'
+          : error.killed
+            ? '安装超过 5 分钟没有完成，已停止。请检查网络后重试。'
+            : '安装没有完成' + (detail ? '：' + detail : '。请检查网络后重试。')
+    };
+    console.error('Pi 运行环境安装失败：' + piInstall.error);
+  });
+}
+
 let piCli = {at: 0};
 async function piSetup() {
   if (Date.now() - piCli.at > 20000) {
@@ -240,6 +310,7 @@ async function piSetup() {
   const [llama, services, files] = await Promise.all([findLlamaServer(env), detectServices(), findGgufFiles()]);
   return {
     status: localStatus(),
+    install: {...piInstall, package: await piPackage().catch(() => null), dir: piRuntimeDir},
     source: shared ? 'shared' : envModel ? 'env' : piSettings ? 'settings' : null,
     current,
     modelName: model?.modelName || null,

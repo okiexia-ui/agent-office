@@ -154,3 +154,46 @@ test('a new office explains an offline Pi instead of asking for a first member',
   await page.getByRole('tab', {name: '设置', exact: true, selected: true}).waitFor();
   assert.deepEqual(errors, []);
 });
+
+test('the chat shows who is writing a reply, and only to messages still waiting', {timeout: 30000}, async t => {
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'unified-office-typing-'));
+  const env = {BUCKET: await localBucket(dir), OFFICE_LOCAL: true, PI_OFFICE: true};
+  await callTool('office_register_agent', {agent_id: 'writer', name: '产品编辑', model: 'API'}, env);
+  await callTool('office_register_agent', {agent_id: 'review', name: '代码审校', model: 'Claude'}, env);
+  const server = await startOfficeServer({
+    stateDir: dir,
+    env: {OFFICE_PORT: '0', OFFICE_PI_LOCAL: '1'},
+    studioFetch: () => Response.json({agents: [], connections: []})
+  });
+  let browser;
+  t.after(async () => {
+    await browser?.close();
+    await server.close();
+    await fs.rm(dir, {recursive: true, force: true});
+  });
+  browser = await chromium.launch({
+    executablePath: process.env.CHROMIUM_EXECUTABLE_PATH,
+    args: ['--enable-unsafe-swiftshader']
+  });
+  const page = await browser.newPage({viewport: {width: 1140, height: 740}});
+  page.setDefaultTimeout(12000);
+  await page.goto(server.url + '/?agent=writer');
+  await page.getByRole('heading', {name: '产品编辑', exact: true}).waitFor();
+  await page.locator('#composer-input').fill('帮我起个标题');
+  await page.locator('#composer-input').press('Enter');
+  await page.locator('.message.user').filter({hasText: '帮我起个标题'}).waitFor();
+  // The office state the 3D scene already uses: a member reports "thinking" while it answers.
+  const office = (tool, args) =>
+    fetch(server.url + '/mcp', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json', Accept: 'application/json'},
+      body: JSON.stringify({jsonrpc: '2.0', id: 1, method: 'tools/call', params: {name: tool, arguments: args}})
+    });
+  await office('office_heartbeat', {agent_id: 'review', status: 'thinking'});
+  await office('office_heartbeat', {agent_id: 'writer', status: 'thinking'});
+  const typing = page.locator('.typing-row');
+  await typing.filter({hasText: '产品编辑 正在回复…'}).waitFor();
+  assert.doesNotMatch(await typing.textContent(), /代码审校/, 'only the member of this chat');
+  await office('office_heartbeat', {agent_id: 'writer', status: 'resting'});
+  await typing.waitFor({state: 'detached'});
+});

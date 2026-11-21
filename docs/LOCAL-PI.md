@@ -64,7 +64,7 @@
 
 ### 在设置里选择 Pi 的模型
 
-运行一次 `npm run pi:install` 安装 Pi CLI 后，不必编辑 `.env.local`：点办公室里的「Pi（本机）」→「设置」，在「本机模型」里可以看到：
+点办公室里的「Pi（本机）」→「设置」，在「本机模型」里完成设置，不必编辑 `.env.local`。还没有 Pi CLI 时，先点那里的「安装 Pi 运行环境」：它与 `npm run pi:install` 安装同一个固定版本，需要联网。「本机模型」里可以看到：
 
 - Pi 运行环境、正在运行的 Ollama / LM Studio（及其模型）、`llama-server` 是否已就绪；
 - 「本机正在运行的模型服务」：直接选 Ollama 或 LM Studio 里的模型；

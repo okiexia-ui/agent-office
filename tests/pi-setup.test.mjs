@@ -95,7 +95,16 @@ test('the workbench can start, keep and stop Pi on a local model service', {time
   async function launch(extra = {}) {
     const child = spawn(process.execPath, ['scripts/local.mjs'], {
       cwd: path.resolve(import.meta.dirname, '..'),
-      env: {PATH: process.env.PATH, HOME: dir, OFFICE_DATA_DIR: dir, OFFICE_PORT: '0', OFFICE_PI_BIN: pi, ...extra},
+      env: Object.fromEntries(
+        Object.entries({
+          PATH: process.env.PATH,
+          HOME: dir,
+          OFFICE_DATA_DIR: dir,
+          OFFICE_PORT: '0',
+          OFFICE_PI_BIN: pi,
+          ...extra
+        }).filter(([, value]) => value !== undefined)
+      ),
       stdio: ['ignore', 'pipe', 'pipe']
     });
     let output = '';
@@ -153,6 +162,54 @@ test('the workbench can start, keep and stop Pi on a local model service', {time
   await office.until('ready');
   assert.equal((await office.call('POST', {clear: true})).status, 202);
   await office.until('off');
+  await office.stop();
+
+  // Without the Pi CLI, the workbench installs the pinned version into the runtime folder.
+  const runtime = path.join(dir, 'pi-runtime');
+  const npm = path.join(dir, 'npm');
+  await writeFile(
+    npm,
+    `#!/bin/sh\nset -e\nprefix="$3"\n[ "$8" = "@earendil-works/pi-coding-agent@1.5.2" ] || exit 3\n` +
+      `mkdir -p "$prefix/node_modules/.bin"\ncp "${pi}" "$prefix/node_modules/.bin/pi"\n`
+  );
+  await chmod(npm, 0o755);
+  const bare = {
+    OFFICE_PI_BIN: undefined,
+    OFFICE_PI_RUNTIME_DIR: runtime,
+    OFFICE_NPM_BIN: npm,
+    PATH: path.dirname(process.execPath) + ':/usr/bin:/bin'
+  };
+  office = await launch(bare);
+  ({data} = await office.call());
+  assert.equal(data.pi.version, null);
+  assert.equal(data.install.package, '@earendil-works/pi-coding-agent@1.5.2');
+  const installed = await fetch(office.origin + '/api/local/pi/install', {
+    method: 'POST',
+    headers: {'X-Agent-Office-Control': '1'}
+  });
+  assert.equal(installed.status, 202);
+  for (let i = 0; i < 100 && data.install.state !== 'done'; i++) {
+    await delay(100);
+    ({data} = await office.call());
+  }
+  assert.equal(data.install.state, 'done');
+  assert.equal(data.pi.version, '0.0.0-test');
+  await office.stop();
+  // The next start finds the installed CLI on its own.
+  office = await launch(bare);
+  ({data} = await office.call());
+  assert.equal(data.pi.version, '0.0.0-test');
+  await office.stop();
+  // A failed install explains itself and can be retried.
+  await writeFile(npm, '#!/bin/sh\necho "npm ERR! network request failed" >&2\nexit 1\n');
+  office = await launch({...bare, OFFICE_PI_RUNTIME_DIR: path.join(dir, 'other-runtime')});
+  await fetch(office.origin + '/api/local/pi/install', {method: 'POST', headers: {'X-Agent-Office-Control': '1'}});
+  for (let i = 0; i < 100 && data.install.state !== 'failed'; i++) {
+    await delay(100);
+    ({data} = await office.call());
+  }
+  assert.equal(data.install.state, 'failed');
+  assert.match(data.install.error, /network request failed/);
   await office.stop();
 
   // A model from .env.local stays in charge; the workbench only shows it.
