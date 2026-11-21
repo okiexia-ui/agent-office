@@ -25,7 +25,7 @@ export function mountProjectChecks(mount) {
       ? '结束当前测试'
       : '在项目目录以当前用户身份执行 npm test' + (data.script ? '\n' + data.script : '');
     details.hidden = !run;
-    output.textContent = run?.output || (running ? '等待测试输出…' : '没有输出。');
+    output.textContent = run?.output || (running ? '测试已开始，输出会显示在这里…' : '这次运行没有打印任何内容。');
     status.dataset.result = run?.status || '';
     status.textContent = run
       ? labels[run.status] +

@@ -40,7 +40,25 @@ try {
   await fs.mkdir(other);
   await fs.copyFile(path.join(project, '.env.local'), path.join(other, '.env.local'));
   await assert.rejects(launchOffice({project: other, support}), /另一个办公室或版本/);
-  console.log('Passed: packaged launch, workbench capability, reopen, stale server and wrong office detection.');
+  // Quitting the app asks for running work, then stops the office (and any local model).
+  const control = {'X-Agent-Office-Control': '1'};
+  const activity = await (await fetch(first.url + 'api/local/activity', {headers: control})).json();
+  assert.equal(activity.running, 0);
+  const stop = await fetch(first.url + 'api/local/shutdown', {method: 'POST', headers: control});
+  assert.equal(stop.status, 202);
+  for (let attempt = 0; childPid && attempt < 200; attempt++) {
+    try {
+      process.kill(childPid, 0);
+      await delay(50);
+    } catch (error) {
+      if (error.code !== 'ESRCH') throw error;
+      childPid = null;
+    }
+  }
+  assert.equal(childPid, null, 'the office stops when the app asks');
+  console.log(
+    'Passed: packaged launch, workbench capability, reopen, stale server, wrong office detection, activity and stop.'
+  );
 } finally {
   if (stale.listening) await new Promise(resolve => stale.close(resolve));
   if (childPid) {

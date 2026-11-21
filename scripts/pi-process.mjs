@@ -22,7 +22,11 @@ function invokePi(args, input, {signal, timeout, env, cwd}) {
         if (!error) return resolve(stripVTControlCharacters(stdout).trim());
         let detail;
         if (error.code === 'ENOENT') detail = '找不到 Pi CLI，请安装 Pi 或设置 OFFICE_PI_BIN。';
-        else if (error.killed) detail = 'Pi 运行超时或已被终止。';
+        // A stop from the person arrives as an abort above, so a kill here is the time limit.
+        else if (error.killed)
+          detail = timeout
+            ? `Pi 运行超时：${timeout < 60000 ? Math.ceil(timeout / 1000) + ' 秒' : Math.round(timeout / 60000) + ' 分钟'}内没有完成，已自动停止。`
+            : 'Pi 的进程被终止了。';
         else if (/auth|api key|credential|401|403/i.test(stderr)) detail = '请核对 Pi 的模型授权。';
         else if (/model|provider|connect|fetch/i.test(stderr)) detail = '请检查 Pi 的模型名称及推理服务连接。';
         else detail = `Pi 未能完成请求（${error.code || error.signal || 'unknown'}）。`;
@@ -99,7 +103,11 @@ export async function generatePi(
   if (env.OFFICE_PI_MODEL) args.push('--model', env.OFFICE_PI_MODEL);
   // Project-local Pi settings must never load executable packages. Only the
   // explicit tool receives access to the selected tree.
-  const cwd = project && (await mkdtemp(path.join(tmpdir(), 'office-project-pi-')));
+  // Pi tells the model its working directory, so office chats also run in an empty
+  // temporary folder: replies and result titles must not pick up local folder names.
+  // Only the opt-in host read tools (OFFICE_PI_READ_TOOLS) need the real directory.
+  const isolate = Boolean(project) || !toolNames.includes('read');
+  const cwd = isolate ? await mkdtemp(path.join(tmpdir(), project ? 'office-project-pi-' : 'office-pi-')) : undefined;
   try {
     const output = await invokePi(args, prompt, {
       cwd,

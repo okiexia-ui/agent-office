@@ -84,9 +84,10 @@
       <form id="studio-connection-form" hidden autocomplete="off">
         <label class="studio-picker" id="studio-connection-picker" hidden>选择连接<select id="studio-connection-id"></select></label>
         <div class="studio-grid">
-          <label>服务商<select id="studio-provider"><option value="deepseek">DeepSeek</option><option value="openai">OpenAI</option><option value="custom">自定义兼容接口</option></select></label>
+          <label>服务商<select id="studio-provider"></select></label>
           <label>连接名称<input id="studio-connection-name" required maxlength="80" placeholder="例如：团队写作模型"></label>
         </div>
+        <p class="studio-hint studio-provider-hint" id="studio-provider-hint" hidden><span id="studio-provider-note"></span> <a id="studio-provider-docs" target="_blank" rel="noopener noreferrer">接口文档 ↗</a></p>
         <label>API 基础地址<input id="studio-base-url" type="url" maxlength="2048" required inputmode="url" autocomplete="off" spellcheck="false" placeholder="https://example.com/v1"></label>
         <div class="studio-grid">
           <label>模型 ID<input id="studio-model" maxlength="256" required autocomplete="off" spellcheck="false" placeholder="服务商提供的模型 ID"></label>
@@ -156,7 +157,7 @@
               <button type="button" data-example="请检查这个项目的代码，找出一个值得修复的问题，说明复现条件和涉及的文件。"><span data-tb-icon="search"></span>查找问题</button>
               <button type="button" data-example="请为项目中一个缺少测试的边界情况补充测试，并说明如何验证。"><span data-tb-icon="test"></span>补充测试</button>
             </div>
-            <p id="tb-model-note" class="tb-model-note" hidden>本机 Pi 尚未就绪。<a href="./?view=office&amp;studio=1">查看 Agent 与模型 ↗</a></p>
+            <p id="tb-model-note" class="tb-model-note" role="status" hidden><span id="tb-model-note-text"></span> <a id="tb-model-note-link" href="./?view=office&amp;studio=1">查看 Agent 与模型 ↗</a></p>
           </div>
         </div></div>
         <span class="tb-sr-only" id="tb-live" role="status" aria-live="polite"></span>

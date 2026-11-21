@@ -107,6 +107,48 @@ let office,
   visualsEnabled,
   reportVisualSteps;
 const localAvailable = () => Boolean(model && !model.stopped?.aborted && !signal.aborted);
+// What the workbench shows about the local model: 'starting' while a configured model
+// loads, 'ready', 'failed' (with the reason), 'stopped', or 'off' when none is configured.
+const piConfigured = Boolean(env.OFFICE_MODEL_FILE || env.OFFICE_MODEL_URL || shared);
+let piFailure = '';
+const localStatus = () => {
+  if (localAvailable()) return {state: 'ready'};
+  if (!piConfigured) return {state: 'off'};
+  if (piFailure) return {state: 'failed', error: piFailure};
+  return {state: model ? 'stopped' : 'starting'};
+};
+
+// Work that would be cut short if the office stopped now: running workbench tasks and
+// office tasks in progress for members this process runs (Pi and studio agents).
+async function runningWork(origin) {
+  let tasks = 0,
+    sessions = 0;
+  if (projects) {
+    const list = await (await projects.fetch(new Request(origin + '/api/studio/projects'))).json();
+    sessions = (list.sessions || []).filter(s => s.status === 'running').length;
+  }
+  if (call) {
+    const {tasks: active = []} = await call('office_list_tasks', {status: 'active'});
+    tasks = active.filter(t => t.agentId === 'pi-local' || String(t.agentId).startsWith('agent-')).length;
+  }
+  return {running: sessions + tasks, sessions, tasks};
+}
+// /api/local/* lets the Mac app ask what is still running and stop this office (and the
+// local model) when it quits. The server already rejects other origins; the custom
+// header also forces a CORS preflight, so no web page can trigger these.
+async function desktopControl(request) {
+  const url = new URL(request.url);
+  if (request.headers.get('x-agent-office-control') !== '1')
+    return Response.json({error: '缺少本机控制请求头。'}, {status: 403});
+  if (url.pathname === '/api/local/activity' && request.method === 'GET')
+    return Response.json(await runningWork(url.origin), {headers: {'Cache-Control': 'no-store'}});
+  if (url.pathname === '/api/local/shutdown' && request.method === 'POST') {
+    console.log('收到停止请求，正在关闭办公室和本机模型…');
+    setTimeout(() => controller.abort(), 50);
+    return Response.json({stopping: true}, {status: 202});
+  }
+  return Response.json({error: 'Not found.'}, {status: 404});
+}
 
 async function startAgent(profile, connection, onStopped = () => {}) {
   signal.throwIfAborted();
@@ -209,6 +251,7 @@ try {
     projects = await openProjectSessions({
       dir: path.join(stateDir, 'projects'),
       localAvailable,
+      localStatus,
       generate: (prompt, {signal: turnSignal, project}) =>
         generatePi(prompt, {
           signal: AbortSignal.any([turnSignal, signal, ...(model.stopped ? [model.stopped] : [])]),
@@ -221,6 +264,7 @@ try {
     env,
     memberFiles: files,
     projects,
+    control: desktopControl,
     studioFetch:
       studio && (req => (call ? studio.fetch(req) : Response.json({error: '办公室正在启动。'}, {status: 503})))
   });
@@ -261,6 +305,7 @@ try {
       console.log(`Pi ${version} · ${model.modelName}`);
     } catch (error) {
       if (shared || signal.aborted) throw error;
+      piFailure = error.message;
       console.error('本机 Pi 启动失败：' + error.message + ' 仍可使用 API 连接。');
     }
   }

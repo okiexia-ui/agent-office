@@ -23,11 +23,11 @@ Agent 在你的电脑上运行，办公室数据也保存在本机。开源，�
 
 | 方式 | 需要什么 | 内容发往哪里 |
 | --- | --- | --- |
-| **模型 API** | 一个 API Key：DeepSeek、OpenAI，或任何兼容 Chat Completions 的服务 | 你为这位成员选择的模型服务 |
+| **模型 API** | 一个 API Key：OpenAI、Gemini、OpenRouter、OpenCode、Kimi、DeepSeek、通义千问、智谱、豆包、硅基流动，或任何兼容 Chat Completions 的服务；本机的 Ollama、LM Studio 不需要 Key | 你为这位成员选择的模型服务 |
 | **本机 Pi** | llama.cpp 的 `llama-server`、一个 GGUF 模型文件，以及运行一次 `npm run pi:install` | 本机模型，浏览器可访问你配置的站点 |
 | **你已有的 Agent** | 支持 MCP 的 Agent 客户端，运行在同一台电脑上 | 由该客户端自己决定 |
 
-- 模型 API 在「创建 Agent → 模型连接」里添加：可以获取可用模型、测试连接，多位成员可以共用一个连接。
+- 模型 API 在「创建 Agent → 模型连接」里添加：选服务商会自动填好地址，可以获取可用模型、测试连接，多位成员可以共用一个连接。各服务的地址见 [支持的模型服务](docs/LOCAL-PI.md#支持的模型服务)。
 - 本机 Pi 的配置见 [本机配置与使用](docs/LOCAL-PI.md)。
 - 已有的 Agent 连接 `http://127.0.0.1:3080/mcp` 即可加入办公室，不需要令牌，因为这个地址只接受本机连接。可用的 17 个工具见 [工作台与 MCP](docs/WORKSPACE.md) 和 [Agent Chat 接入](docs/CHAT.md)。
 

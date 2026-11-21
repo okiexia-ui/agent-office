@@ -12,6 +12,7 @@ final class OfficeWindow: NSObject, NSApplicationDelegate, NSWindowDelegate, WKU
     private var timeout: Timer?
     private var runNumber = 0
     private var base: URL?
+    private var quitting = false
     private struct Transfer {
         let download: WKDownload
         let final: URL
@@ -66,6 +67,78 @@ final class OfficeWindow: NSObject, NSApplicationDelegate, NSWindowDelegate, WKU
         connect()
     }
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { true }
+    // The office runs as a separate background service with the local model loaded.
+    // Quitting stops it when nothing is running, so the model's memory is freed; with
+    // work in progress the person chooses. Offices without these routes are left alone.
+    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        guard let base = base, !quitting else { return .terminateNow }
+        quitting = true
+        control(base, "api/local/activity", method: "GET") { [weak self] json in
+            guard let self = self else { return }
+            guard let running = json?["running"] as? Int else { NSApp.reply(toApplicationShouldTerminate: true); return }
+            if running == 0 {
+                self.control(base, "api/local/shutdown", method: "POST") { _ in NSApp.reply(toApplicationShouldTerminate: true) }
+                return
+            }
+            let alert = NSAlert()
+            alert.messageText = "还有 \(running) 个任务正在执行"
+            alert.informativeText = "可以让办公室在后台继续完成，下次打开时查看结果；也可以现在停止，未完成的任务会中断。停止时本机模型也会关闭，释放内存。"
+            alert.addButton(withTitle: "后台继续并退出")
+            alert.addButton(withTitle: "停止并退出")
+            alert.addButton(withTitle: "取消")
+            switch alert.runModal() {
+            case .alertFirstButtonReturn:
+                NSApp.reply(toApplicationShouldTerminate: true)
+            case .alertSecondButtonReturn:
+                self.control(base, "api/local/shutdown", method: "POST") { _ in NSApp.reply(toApplicationShouldTerminate: true) }
+            default:
+                self.quitting = false
+                self.window.makeKeyAndOrderFront(nil)
+                NSApp.reply(toApplicationShouldTerminate: false)
+            }
+        }
+        return .terminateLater
+    }
+    // Ask the office for its activity or to stop. The header keeps web pages out.
+    private func control(_ base: URL, _ path: String, method: String, done: @escaping ([String: Any]?) -> Void) {
+        var request = URLRequest(url: base.appendingPathComponent(path), timeoutInterval: 3)
+        request.httpMethod = method
+        request.setValue("1", forHTTPHeaderField: "X-Agent-Office-Control")
+        URLSession.shared.dataTask(with: request) { data, response, _ in
+            let ok = (response as? HTTPURLResponse).map { (200..<300).contains($0.statusCode) } ?? false
+            let json = ok ? data.flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: Any] } : nil
+            DispatchQueue.main.async { done(json) }
+        }.resume()
+    }
+    @objc private func stopOffice(_ sender: Any?) {
+        guard let base = base else { NSSound.beep(); return }
+        control(base, "api/local/activity", method: "GET") { [weak self] json in
+            guard let self = self else { return }
+            guard let running = json?["running"] as? Int else {
+                self.notice("这个办公室版本不支持从 App 停止。", "请更新 Agent Office 后再试。")
+                return
+            }
+            let alert = NSAlert()
+            alert.messageText = "停止办公室服务？"
+            alert.informativeText = running > 0
+                ? "还有 \(running) 个任务正在执行，停止后会中断。本机模型也会关闭，释放内存。"
+                : "办公室和本机模型都会关闭，释放内存。之后点「重试」即可重新启动。"
+            alert.addButton(withTitle: "停止")
+            alert.addButton(withTitle: "取消")
+            guard alert.runModal() == .alertFirstButtonReturn else { return }
+            self.control(base, "api/local/shutdown", method: "POST") { result in
+                guard result != nil else { self.notice("没能停止办公室服务。", "请稍后再试。"); return }
+                self.base = nil
+                self.presentStatus("办公室服务已停止，本机模型已关闭。点「重试」可以重新启动。", failed: true)
+            }
+        }
+    }
+    private func notice(_ title: String, _ detail: String) {
+        let alert = NSAlert()
+        alert.messageText = title
+        alert.informativeText = detail
+        alert.beginSheetModal(for: window)
+    }
     func applicationWillTerminate(_ notification: Notification) {
         timeout?.invalidate()
         if helper?.isRunning == true { helper?.terminate() }
@@ -270,6 +343,8 @@ final class OfficeWindow: NSObject, NSApplicationDelegate, NSWindowDelegate, WKU
         }
         let app = sub("Agent Office")
         app.addItem(withTitle: "关于 Agent Office", action: #selector(NSApplication.orderFrontStandardAboutPanel(_:)), keyEquivalent: "")
+        app.addItem(.separator())
+        app.addItem(withTitle: "停止办公室服务…", action: #selector(stopOffice(_:)), keyEquivalent: "").target = self
         app.addItem(.separator())
         app.addItem(withTitle: "隐藏 Agent Office", action: #selector(NSApplication.hide(_:)), keyEquivalent: "h")
         app.addItem(withTitle: "退出 Agent Office", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")

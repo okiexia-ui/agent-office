@@ -895,3 +895,42 @@ body.taskbench {
     position: static;
   }
 }
+
+/* Model status: loading is information, not an error. */
+.tb-model[data-state='starting'] i {
+  background: var(--tb-em);
+  animation: tb-pulse 1.4s ease-in-out infinite;
+}
+.tb-model[data-state='failed'] i,
+.tb-model[data-state='stopped'] i {
+  background: var(--tb-em);
+}
+.tb-model-note[data-tone='info'] {
+  color: var(--tb-sub);
+}
+@keyframes tb-pulse {
+  50% {
+    opacity: 0.35;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .tb-model[data-state='starting'] i {
+    animation: none;
+  }
+}
+/* A local model can take minutes; this note appears after a while. */
+.tb-slow {
+  margin: -6px 0 14px;
+  padding: 8px 11px;
+  border-radius: 8px;
+  background: var(--tb-em-soft);
+  color: var(--tb-text);
+  font-size: 12px;
+  line-height: 1.7;
+}
+.tb-run-hint {
+  margin: -4px 0 12px;
+  color: var(--tb-sub);
+  font-size: 13px;
+  line-height: 1.7;
+}

@@ -81,7 +81,8 @@ async function activity(journal) {
     });
 }
 
-export async function openProjectSessions({dir, localAvailable, generate}) {
+const STOPPED_WITH_CHANGES = '已停止本轮。已写入的文件改动可在下方查看。';
+export async function openProjectSessions({dir, localAvailable, localStatus, generate}) {
   await fs.mkdir(dir, {recursive: true, mode: 0o700});
   const stateDir = await fs.realpath(path.dirname(dir));
   const sessions = new Map();
@@ -131,6 +132,9 @@ export async function openProjectSessions({dir, localAvailable, generate}) {
       }
     }
     const toolActivity = await activity(journal);
+    // Only point to file changes below when there are some.
+    if (result.status === 'stopped' && result.error === STOPPED_WITH_CHANGES && !changes?.length)
+      result = {...result, error: '已停止本轮，没有改动文件。'};
     const updated = {
       ...session,
       status: 'idle',
@@ -195,7 +199,7 @@ export async function openProjectSessions({dir, localAvailable, generate}) {
       result = {status: 'done', reply: reply.trim().slice(0, 48000)};
     } catch (error) {
       result = controller.signal.aborted
-        ? {status: 'stopped', error: '已停止本轮。已写入的文件改动可在下方查看。'}
+        ? {status: 'stopped', error: STOPPED_WITH_CHANGES}
         : {status: 'failed', error: error.message || 'Pi 运行失败。'};
     }
     try {
@@ -297,6 +301,7 @@ export async function openProjectSessions({dir, localAvailable, generate}) {
           if (id) return json({session: await detail(findSession(id))});
           return json({
             localAvailable: localAvailable(),
+            localStatus: localStatus?.() ?? {state: localAvailable() ? 'ready' : 'off'},
             sessions: [...sessions.values()].map(summary).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
           });
         }

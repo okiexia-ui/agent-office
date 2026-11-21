@@ -59,6 +59,40 @@ async function api(suffix = '', body) {
   return response.json();
 }
 const turnStatus = {running: '执行中', done: '已完成', failed: '执行失败', stopped: '已停止'};
+const MODEL_CHIP = {
+  ready: '本机 Pi 已就绪',
+  starting: '本机 Pi 启动中…',
+  failed: '本机 Pi 启动失败',
+  stopped: '本机 Pi 已停止',
+  off: '未配置本机 Pi',
+  connecting: '正在连接 Pi'
+};
+const MODEL_NOTE = {
+  starting: '正在加载本机模型，第一次启动通常要半分钟左右。可以先写好任务，就绪后再发送。',
+  failed: '本机 Pi 没能启动，可以检查模型设置后重新打开 Agent Office。',
+  stopped: '本机模型已经停止。重新打开 Agent Office 后可以继续。',
+  off: '还没有配置本机模型。项目工作台需要本机 Pi，设置方法见「Agent 与模型」。'
+};
+// Elapsed time for a running or finished step list: 45 秒, 3 分 05 秒, 1 小时 2 分.
+function duration(ms) {
+  const s = Math.max(0, Math.round(ms / 1000));
+  if (s < 60) return s + ' 秒';
+  if (s < 3600) return Math.floor(s / 60) + ' 分 ' + String(s % 60).padStart(2, '0') + ' 秒';
+  return Math.floor(s / 3600) + ' 小时 ' + Math.floor((s % 3600) / 60) + ' 分';
+}
+// Long paths crowd the header: show ~ for the home folder and keep the start and the
+// end of very long paths. The full path stays in the tooltip.
+export function shortPath(full = '') {
+  const path = full.replace(/^\/Users\/[^/]+(?=\/|$)/, '~');
+  // Measure as displayed: CJK characters take about two columns.
+  const width = [...path].reduce((sum, char) => sum + (/[⺀-￿]/.test(char) ? 2 : 1), 0);
+  if (width <= 56) return path;
+  const parts = path.split('/'),
+    tail = parts.slice(-2).join('/');
+  return parts[0] + '/' + (parts[1] || '') + '/…/' + tail;
+}
+// A local model can spend minutes on one task; after this long, suggest how to unblock it.
+const SLOW_AFTER = 3 * 60 * 1000;
 const operation = {list: '查看目录', read: '读取', search: '搜索', write: '写入', edit: '编辑', test: '测试'};
 const stamp = date => {
   if (!date) return '';
@@ -113,15 +147,43 @@ function turnBody(turn) {
     '</span><time>' +
     stamp(turn.finishedAt || turn.startedAt) +
     '</time></div>' +
-    (activity.length
+    (activity.length || running
       ? '<details class="tb-activity"><summary>' +
-        (running ? actionLabel(activity.at(-1)) : '执行记录 · ' + activity.length) +
+        (running
+          ? (activity.length
+              ? '正在' + actionLabel(activity.at(-1)) + ' · 第 ' + activity.length + ' 步'
+              : '正在思考') +
+            ' · 已用 <span data-since="' +
+            esc(turn.startedAt || '') +
+            '">' +
+            (turn.startedAt ? duration(Date.now() - Date.parse(turn.startedAt)) : '') +
+            '</span>'
+          : '执行记录 · ' +
+            activity.length +
+            ' 步' +
+            (turn.startedAt && turn.finishedAt
+              ? ' · 用时 ' + duration(Date.parse(turn.finishedAt) - Date.parse(turn.startedAt))
+              : '')) +
         '</summary><ol>' +
         activity.map(a => '<li>' + actionLabel(a) + '</li>').join('') +
         '</ol></details>'
       : '') +
+    (running && turn.startedAt
+      ? '<p class="tb-slow" data-slow-since="' +
+        esc(turn.startedAt) +
+        '" hidden>本机模型处理得比较慢。如果几分钟都没有新进展，可以点「停止」，把任务说得更具体或拆小一些再试。</p>'
+      : '') +
     (turn.reply ? '<div class="tb-reply">' + markdown(turn.reply) + '</div>' : '') +
-    (turn.error ? '<p class="tb-run-error">' + esc(turn.error) + '</p>' : '') +
+    // A stop the person asked for is not an error; only failures are shown in red.
+    (turn.error
+      ? '<p class="' + (turn.status === 'stopped' ? 'tb-run-hint' : 'tb-run-error') + '">' + esc(turn.error) + '</p>'
+      : '') +
+    // Work done before a failure or stop is kept; point to it rather than only the error.
+    (turn.status === 'failed' && turn.changes?.length
+      ? '<p class="tb-run-hint">这一轮已经改了 ' +
+        turn.changes.length +
+        ' 个文件，改动保留在下方。可以先看看改动或运行测试，再决定继续还是重新运行。</p>'
+      : '') +
     (turn.changes?.length
       ? '<section class="tb-review"><h3>' +
         icon('change') +
@@ -144,6 +206,16 @@ export function openTaskbench() {
     el.innerHTML = icon(el.dataset.tbIcon);
   });
   mountProjectChecks(byId('checks'));
+  // Running steps show a live elapsed time; after a few minutes, a hint on how to unblock.
+  setInterval(() => {
+    const now = Date.now();
+    for (const el of document.querySelectorAll('[data-since]')) {
+      const since = Date.parse(el.dataset.since);
+      if (Number.isFinite(since)) el.textContent = duration(now - since);
+    }
+    for (const el of document.querySelectorAll('[data-slow-since]'))
+      el.hidden = now - Date.parse(el.dataset.slowSince) < SLOW_AFTER;
+  }, 1000);
   const prompt = byId('prompt');
   const small = matchMedia('(max-width: 760px)');
   const mac = /Mac|iPad|iPhone/.test(navigator.platform);
@@ -151,6 +223,7 @@ export function openTaskbench() {
   byId('send').title = '发送任务（' + (mac ? '⌘' : 'Ctrl') + ' + Enter）';
   let index = [],
     ready = null,
+    modelStatus = null,
     session = null,
     activeId = null,
     project = '',
@@ -222,7 +295,8 @@ export function openTaskbench() {
     byId('folder-name').textContent = project ? basename(project) : '选择项目';
     byId('folder').title = project || '选择本机文件夹';
     byId('folder').setAttribute('aria-label', activeId ? '当前项目：' + project : '选择项目文件夹');
-    byId('project-label').textContent = project;
+    byId('project-label').textContent = shortPath(project);
+    byId('project-label').title = project;
     const hasSession = Boolean(activeId);
     byId('content').classList.toggle('tb-empty', !hasSession);
     byId('intro').hidden = byId('suggestions').hidden = hasSession;
@@ -241,10 +315,20 @@ export function openTaskbench() {
     byId('folder').disabled = busy || loading || !!activeId;
     byId('new').disabled = busy;
     prompt.disabled = loading;
-    byId('model-note').hidden = ready !== false;
-    byId('model').classList.toggle('tb-ready', ready === true);
-    byId('model').querySelector('span').textContent =
-      ready === true ? '本机 Pi 已就绪' : ready === false ? '本机 Pi 未就绪' : '正在连接 Pi';
+    // Loading a local model takes a while; say so calmly instead of looking like an error.
+    const state = ready === true ? 'ready' : modelStatus?.state || (ready === false ? 'off' : 'connecting');
+    const model = byId('model');
+    model.classList.toggle('tb-ready', state === 'ready');
+    model.dataset.state = state;
+    model.querySelector('span').textContent = MODEL_CHIP[state] || MODEL_CHIP.connecting;
+    const note = MODEL_NOTE[state];
+    byId('model-note').hidden = !note;
+    if (note) {
+      byId('model-note').dataset.tone = state === 'starting' ? 'info' : 'warn';
+      byId('model-note-text').textContent =
+        state === 'failed' && modelStatus?.error ? note + '原因：' + modelStatus.error : note;
+      byId('model-note-link').hidden = !['failed', 'off'].includes(state);
+    }
     byId('turns')
       .querySelectorAll('[data-retry]')
       .forEach(b => {
@@ -363,6 +447,7 @@ export function openTaskbench() {
         if (token === revision && !busy) {
           index = list.sessions;
           ready = list.localAvailable;
+          modelStatus = list.localStatus || null;
           if (connectionError) report('');
           if (detail) {
             loading = false;

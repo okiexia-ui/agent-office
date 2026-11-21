@@ -24,7 +24,9 @@ export async function startOfficeServer({
   stateDir = env.OFFICE_DATA_DIR || path.join(root, '.office-local'),
   studioFetch,
   memberFiles,
-  projects
+  projects,
+  // Optional handler for /api/local/* (activity and shutdown for the desktop app).
+  control
 } = {}) {
   const port = Number(env.OFFICE_PORT || 3080);
   const backend = await localBackend(createWorker(), path.resolve(stateDir), env, studioFetch, memberFiles, projects);
@@ -57,7 +59,8 @@ export async function startOfficeServer({
         res.end(req.method === 'HEAD' ? undefined : body);
         return;
       }
-      const response = await backend.fetch(request);
+      const response =
+        control && url.pathname.startsWith('/api/local/') ? await control(request) : await backend.fetch(request);
       res.writeHead(response.status, Object.fromEntries(response.headers));
       res.end(Buffer.from(await response.arrayBuffer()));
     } catch (error) {
