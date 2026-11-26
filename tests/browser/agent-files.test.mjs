@@ -37,11 +37,13 @@ test('a Pi member can receive and return files in a nested folder from its priva
     args: ['--enable-unsafe-swiftshader']
   });
   const page = await browser.newPage({viewport: {width: 390, height: 810}});
-  page.setDefaultTimeout(6500);
+  // Same limit as the other browser tests. The first page of a CI run also starts Chrome and
+  // the 3D scene cold, so its first wait gets longer.
+  page.setDefaultTimeout(12000);
   await page.goto(server.url);
   const trigger = page.locator('#open-agent-files');
   const pi = page.locator('[data-agent="' + id + '"]');
-  await pi.waitFor();
+  await pi.waitFor({timeout: 20000});
   assert.ok(await trigger.isHidden());
   await pi.click();
   await trigger.click();
