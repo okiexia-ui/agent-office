@@ -487,6 +487,27 @@ function renderRecipients() {
         .join('')
   );
 }
+// Who is writing a reply to you now: members report "thinking" while they answer a message.
+function replying(list) {
+  if (demo) return [];
+  const answering = state.agents.filter(a => isOnline(a) && a.status === 'thinking');
+  const fromYou = m => (m.role || m.authorType) === 'user';
+  if (current !== 'group') {
+    const last = list.at(-1);
+    return last && fromYou(last) && !last.replyId ? answering.filter(a => a.id === current) : [];
+  }
+  // In the group: members named in your latest messages that have not answered them yet.
+  const asked = list.filter(fromYou).slice(-3);
+  return answering.filter(a =>
+    asked.some(
+      m => m.mentions?.includes(a.id) && !list.some(r => r.replyTo === m.id && (r.authorId || r.agentId) === a.id)
+    )
+  );
+}
+const typingRow = members =>
+  members.length
+    ? `<div class="typing-row" role="status"><span class="typing-dots" aria-hidden="true"><i></i><i></i><i></i></span>${esc(members.map(a => a.name).join('、'))} 正在回复…</div>`
+    : '';
 function renderMessages() {
   const list = currentMessages(),
     linked = scopeList(visuals);
@@ -538,6 +559,7 @@ function renderMessages() {
       return `<article class="message ${user ? 'user' : 'agent'} ${current === 'group' ? 'group-message' : ''}" data-message="${esc(m.id)}"><div class="message-meta">${user ? '<strong>你</strong>' : `<button class="message-person" data-private="${esc(a?.id || m.authorId || m.agentId || '')}" aria-label="与 ${esc(name)} 私聊">${avatar(a)}<strong>${esc(name)}</strong></button><span class="speaker-role">你的伙伴</span>`}<time>${time(m.createdAt)}</time>${current === 'group' && !m.localStatus ? `<button class="message-reply" data-quote="${esc(m.id)}" aria-label="回复 ${esc(name)}">↩</button>` : ''}</div>${m.replyPreview ? `<blockquote>${esc(m.replyPreview.authorName)}：${esc(m.replyPreview.content)}</blockquote>` : ''}<div class="message-body">${highlightedMessage(m.content, state.agents)}</div>${results.map(v => `<button class="result-link" data-visual="${esc(v.id)}">${esc(v.title)}<span>查看${VISUAL_KINDS[v.kind]} ↗</span></button>`).join('')}<div class="message-state"><span>${stateText}</span>${m.localStatus === 'failed' ? `<button data-retry="${esc(m.requestId)}">重试</button>` : ''}</div></article>`;
     })
     .join('');
+  log.insertAdjacentHTML('beforeend', typingRow(replying(list)));
   if (nearEnd) log.scrollTop = log.scrollHeight;
 }
 const visualCommand = /^\s*(?:@\S+\s+)*\/visual\s+(document|chart|table|html)\b/i;

@@ -44,6 +44,16 @@ function describeCurrent(setup) {
   return current.file ? current.file.split('/').pop() : current.model + ' · ' + new URL(current.url).host;
 }
 
+// Without the Pi CLI: install the pinned version from here, or show the terminal command.
+function installHelp(install = {}, editable) {
+  const command = '<code>npm run pi:install</code>';
+  if (install.state === 'running')
+    return `<li class="pi-model-fix">正在用 npm 安装 ${esc(install.package || 'Pi')}，通常需要一两分钟…</li>`;
+  const failed = install.state === 'failed' ? `<span class="studio-error">${esc(install.error)}</span> ` : '';
+  if (!editable) return `<li class="pi-model-fix">${failed}在项目目录的终端里运行 ${command}（只需一次）。</li>`;
+  return `<li class="pi-model-fix">${failed}需要先安装一次 Pi 运行环境：会用 npm 下载 ${esc(install.package || 'Pi')}（需要联网）。也可以在项目目录的终端里运行 ${command}。<button type="button" id="pi-install">${install.state === 'failed' ? '重试安装' : '安装 Pi 运行环境'}</button></li>`;
+}
+
 export function mountPiModelSetup(root, {active = () => true, onChanged} = {}) {
   let setup,
     watching = 0;
@@ -72,7 +82,7 @@ export function mountPiModelSetup(root, {active = () => true, onChanged} = {}) {
       }
       <ul class="pi-model-checks">
         <li data-ok="${!piMissing}"><span>Pi 运行环境</span><small>${piMissing ? '未安装' : esc(setup.pi.version)}</small></li>
-        ${piMissing ? '<li class="pi-model-fix">在项目目录的终端里运行 <code>npm run pi:install</code>（只需一次），再点「重新检测」。</li>' : ''}
+        ${piMissing ? installHelp(setup.install, editable) : ''}
         <li data-ok="${services.length > 0}"><span>正在运行的模型服务</span><small>${setup.services.length ? esc(setup.services.map(s => s.name + ' ' + s.models.length + ' 个模型').join('，')) : '没有检测到 Ollama 或 LM Studio'}</small></li>
         <li data-ok="${Boolean(setup.llama)}"><span>llama-server（运行 GGUF 文件用）</span><small>${setup.llama ? '已安装' : '未找到 · brew install llama.cpp'}</small></li>
       </ul>
@@ -108,6 +118,8 @@ export function mountPiModelSetup(root, {active = () => true, onChanged} = {}) {
     root.querySelector('#pi-service').onfocus = () => choose('service');
     root.querySelector('#pi-file').onfocus = () => choose('file');
     root.querySelector('#pi-recheck').onclick = () => load('正在重新检测…');
+    const install = root.querySelector('#pi-install');
+    if (install) install.onclick = () => void installRuntime();
     root.querySelector('#pi-use').onclick = () => {
       const source = root.querySelector('input[name="pi-source"]:checked')?.value;
       const body =
@@ -118,6 +130,28 @@ export function mountPiModelSetup(root, {active = () => true, onChanged} = {}) {
     };
     const clear = root.querySelector('#pi-clear');
     if (clear) clear.onclick = () => void apply({clear: true}, '正在停用本机模型…');
+  }
+
+  async function installRuntime() {
+    for (const button of root.querySelectorAll('button')) button.disabled = true;
+    try {
+      const response = await fetch('/api/local/pi/install', {
+        method: 'POST',
+        headers: HEADERS,
+        signal: AbortSignal.timeout(20000)
+      });
+      if (!response.ok) throw Error((await response.json()).error || '无法开始安装。');
+      const run = ++watching;
+      do {
+        setup = await readPiSetup();
+        if (!active() || run !== watching) return;
+        render();
+        if (setup.install?.state === 'running') await new Promise(resolve => setTimeout(resolve, 2000));
+      } while (setup.install?.state === 'running');
+      if (setup.pi.version) render('Pi 运行环境已安装，选好模型后点「启动 Pi」。');
+    } catch (error) {
+      if (active()) render(error.message, true);
+    }
   }
 
   async function load(message) {

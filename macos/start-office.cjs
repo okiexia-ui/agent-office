@@ -95,6 +95,8 @@ async function launchOffice({
   for (const key of ['OFFICE_PI_BIN', 'OFFICE_LLAMA_BIN', 'CHROMIUM_EXECUTABLE_PATH']) {
     if (env[key]?.includes('/')) env[key] = path.resolve(configRoot, env[key]);
   }
+  // Pi installed from the workbench goes next to the configured office, not into the versioned runtime.
+  if (!env.OFFICE_PI_RUNTIME_DIR) env.OFFICE_PI_RUNTIME_DIR = path.join(configRoot, '.office-local', 'pi-runtime');
   const pi = path.join(configRoot, '.office-local', 'pi-runtime', 'node_modules', '.bin', 'pi');
   if (!env.OFFICE_PI_BIN && (await exists(pi))) env.OFFICE_PI_BIN = pi;
   env.PATH = [path.dirname(process.execPath), '/opt/homebrew/bin', '/usr/local/bin', env.PATH || '/usr/bin:/bin'].join(
