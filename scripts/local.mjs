@@ -295,12 +295,20 @@ function installPi() {
 
 let piCli = {at: 0};
 async function piSetup() {
-  if (Date.now() - piCli.at > 20000) {
+  // One consistent answer per request: the install state is read first, and the CLI check
+  // belongs to the CLI path in use at that moment. An install sets OFFICE_PI_BIN before it
+  // reports "done", so a finished install is never paired with a check of the old path.
+  const install = {...piInstall};
+  const bin = env.OFFICE_PI_BIN;
+  let cli = piCli;
+  if (cli.bin !== bin || Date.now() - cli.at > 20000) {
     try {
-      piCli = {at: Date.now(), version: await preflightPi({env, signal})};
+      cli = {at: Date.now(), bin, version: await preflightPi({env: {...env, OFFICE_PI_BIN: bin}, signal})};
     } catch (error) {
-      piCli = {at: Date.now(), error: error.message};
+      cli = {at: Date.now(), bin, error: error.message};
     }
+    // Remembered only while that CLI is still the one in use.
+    if (env.OFFICE_PI_BIN === bin) piCli = cli;
   }
   const current = envModel
     ? env.OFFICE_MODEL_FILE
@@ -310,11 +318,11 @@ async function piSetup() {
   const [llama, services, files] = await Promise.all([findLlamaServer(env), detectServices(), findGgufFiles()]);
   return {
     status: localStatus(),
-    install: {...piInstall, package: await piPackage().catch(() => null), dir: piRuntimeDir},
+    install: {...install, package: await piPackage().catch(() => null), dir: piRuntimeDir},
     source: shared ? 'shared' : envModel ? 'env' : piSettings ? 'settings' : null,
     current,
     modelName: model?.modelName || null,
-    pi: {version: piCli.version || null, error: piCli.error || null},
+    pi: {version: cli.version || null, error: cli.error || null},
     llama,
     services,
     files

@@ -54,8 +54,9 @@ export function createMemberPanel({config, select, refresh, connect, prompt, ope
     files.hidden = tab !== 'files' || creating;
     $('office-messages').hidden = inProject;
     $('member-project').hidden = !inProject;
-    $('project-controls').hidden = !canProject || !member;
-    $('open-project-task').hidden = inProject;
+    $('project-controls').hidden = !member;
+    $('open-project-task').hidden = inProject || !canProject;
+    $('assign-task').hidden = inProject;
     $('back-to-chat').hidden = !inProject;
   }
   function listDeliveries() {
