@@ -464,6 +464,7 @@ try {
       localRole: () => (model ? ('本机 Pi · ' + model.modelName).slice(0, 80) : '本机 Pi 助手'),
       stopProjects: id => projects?.stopAgent(id),
       updateMember: (id, fields) => office.setMemberProfile(id, fields),
+      moveMember: (id, seatId) => office.setMemberSeat(id, seatId),
       markOffline: (id, profile) =>
         office.setAgentEnabled(id, false, {
           name: profile.name,

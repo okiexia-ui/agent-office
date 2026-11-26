@@ -40,12 +40,12 @@ const panel = `
         <p class="member-hint" id="studio-usage" hidden></p>
         <button type="button" id="studio-edit-connection" hidden>编辑所选连接</button>
       </div>
+      <label id="studio-seat-label" hidden>工位<select id="studio-seat"></select></label>
       <div id="studio-runtime" hidden><span class="member-field-title">模型</span><p id="studio-runtime-description"></p></div>
       <div id="studio-local-model" class="pi-model" hidden></div>
       <div id="studio-external-controls" hidden>
         <label>办公室说明<textarea id="studio-office-notes" rows="3" maxlength="4000" aria-describedby="studio-notes-hint"></textarea></label>
         <p id="studio-notes-hint" class="member-hint">客户端通过 MCP 读取这段说明，自行决定如何采用。</p>
-        <label>工位<select id="studio-seat"></select></label>
         <div class="member-color"><label>成员颜色<input id="studio-color" type="color"></label><button type="button" id="studio-reset-color">使用默认颜色</button></div>
         <label class="member-check"><input id="studio-enabled" type="checkbox">在办公室启用此成员</label>
       </div>
@@ -185,29 +185,6 @@ export async function mountMemberSettings(root, {agent = null, template, onAgent
       customColor = null;
       field('color').value = defaultColor;
     };
-    let seats;
-    try {
-      const response = await fetch('/api/state', {
-        cache: 'no-store',
-        redirect: 'error',
-        signal: AbortSignal.timeout(8000)
-      });
-      if (!response.ok) throw Error();
-      const state = await response.json();
-      seats = assignSeats(state.agents);
-    } catch {
-      seats = [profile];
-    }
-    if (!active()) return;
-    const seatId = seats.find(a => a.id === profile.id)?.seatId || profile.seatId;
-    const options = DESKS.map(d => {
-      const occupant = seats.find(a => a.id !== profile.id && a.seatId === d.id);
-      const option = new Option(d.label + (occupant ? ' · ' + occupant.name : ''), d.id);
-      option.disabled = !!occupant;
-      return option;
-    });
-    field('seat').replaceChildren(...options);
-    if (seatId) field('seat').value = seatId;
   } else if (builtin) {
     field('runtime').hidden = true;
     field('agent-status').textContent = catalog.localAvailable ? '已就绪' : '模型离线';
@@ -238,6 +215,37 @@ export async function mountMemberSettings(root, {agent = null, template, onAgent
         });
     }
   }
+  // Every existing member has a desk in the scene; only free desks can be chosen.
+  let savedSeat = '';
+  if (agent) {
+    field('seat-label').hidden = false;
+    let seats;
+    try {
+      const response = await fetch('/api/state', {
+        cache: 'no-store',
+        redirect: 'error',
+        signal: AbortSignal.timeout(8000)
+      });
+      if (!response.ok) throw Error();
+      const state = await response.json();
+      seats = assignSeats(state.agents);
+    } catch {
+      seats = [profile];
+    }
+    if (!active()) return;
+    // A member that has not connected yet has no desk to move.
+    field('seat-label').hidden = !seats.some(a => a.id === profile.id);
+    const seatId = seats.find(a => a.id === profile.id)?.seatId || profile.seatId;
+    const options = DESKS.map(d => {
+      const occupant = seats.find(a => a.id !== profile.id && a.seatId === d.id);
+      const option = new Option(d.label + (occupant ? ' · ' + occupant.name : ''), d.id);
+      option.disabled = !!occupant;
+      return option;
+    });
+    field('seat').replaceChildren(...options);
+    if (seatId) field('seat').value = seatId;
+    savedSeat = field('seat').value;
+  }
   field('agent-form').onsubmit = e => {
     e.preventDefault();
     work(agent ? '正在保存设置…' : '正在创建成员…', async () => {
@@ -261,6 +269,12 @@ export async function mountMemberSettings(root, {agent = null, template, onAgent
             : '/agents';
       const {agent: saved} = await request(route, agent ? 'PUT' : 'POST', body);
       if (!active()) return;
+      // External members save their desk with the profile; Pi and studio members move separately.
+      if (agent && !external && field('seat').value && field('seat').value !== savedSeat) {
+        await request('/members/' + encodeURIComponent(agent.id) + '/seat', 'PUT', {seatId: field('seat').value});
+        if (!active()) return;
+        savedSeat = field('seat').value;
+      }
       if (managedId) {
         profile = saved;
         catalog.agents = catalog.agents.map(a => (a.id === saved.id ? saved : a));
