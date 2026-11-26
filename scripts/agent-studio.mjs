@@ -103,6 +103,7 @@ export async function openAgentStudio({
   localStatus = () => ({state: localAvailable() ? 'ready' : 'off'}),
   localRole = () => '本机 Pi 助手',
   updateMember,
+  moveMember,
   stopProjects,
   testConnection = defaultTest,
   listModels = listApiModels
@@ -371,6 +372,23 @@ export async function openAgentStudio({
             builtin: builtin(),
             connections: data.connections.map(visibleConnection),
             agents: data.agents.map(visibleAgent)
+          });
+        }
+        // Any member's desk, including Pi and studio members whose other settings live elsewhere.
+        const seat = /^\/api\/studio\/members\/([\w-]{1,64})\/seat$/.exec(url.pathname);
+        if (seat) {
+          if (request.method !== 'PUT') throw new StudioError('请使用 PUT 更换工位。', 405);
+          const {seatId} = await readForm(request);
+          if (typeof seatId !== 'string') throw new StudioError('请选择工位。');
+          if (!moveMember) throw new StudioError('当前办公室无法更换工位。', 503);
+          return await enqueue(async () => {
+            if (closed) throw new StudioError('办公室正在关闭。', 503);
+            try {
+              return json({seat: await moveMember(seat[1], seatId)});
+            } catch (error) {
+              if (Number.isInteger(error.status)) throw new StudioError(error.message, error.status);
+              throw error;
+            }
           });
         }
         const member = /^\/api\/studio\/members\/([\w-]{1,64})$/.exec(url.pathname);

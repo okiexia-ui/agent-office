@@ -1,6 +1,6 @@
 // Local servers serve their own UI. In shared mode the Sites credential belongs to
 // the Node process, and only office data requests can use it.
-import {setManagedAgentEnabled, setOfficeMemberProfile} from '../worker/index.js';
+import {setManagedAgentEnabled, setOfficeMemberProfile, setOfficeMemberSeat} from '../worker/index.js';
 import {localBucket} from './local-bucket.mjs';
 
 const response = (data, status = 200, headers = {}) =>
@@ -169,6 +169,7 @@ export async function localBackend(worker, dataDir, env = process.env, studioFet
     remoteOrigin: remote?.origin,
     setAgentEnabled: (id, enabled, profile) => setManagedAgentEnabled(bindings, id, enabled, profile),
     setMemberProfile: (id, profile) => setOfficeMemberProfile(bindings, id, profile),
+    setMemberSeat: (id, seatId) => setOfficeMemberSeat(bindings, id, seatId),
     async fetch(request) {
       const url = new URL(request.url);
       const path = url.pathname;

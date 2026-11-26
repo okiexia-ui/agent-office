@@ -327,3 +327,50 @@ test('local member settings persist, guide external MCP reconnects and keep Pi i
   assert.equal((await change('claude', form)).status, 200);
   assert.equal((await rpc('office_register_agent', reg)).agent.name, form.name);
 });
+
+test('any member can move to a free desk, and the desk survives a restart', async t => {
+  const dir = await mkdtemp(path.join(os.tmpdir(), 'office-member-seat-'));
+  t.after(() => rm(dir, {recursive: true, force: true}));
+  let backend, studio;
+  const reopen = async () => {
+    await studio?.close();
+    studio = await openAgentStudio({
+      dir: path.join(dir, 'studio'),
+      localAvailable: () => false,
+      updateMember: (id, fields) => backend.setMemberProfile(id, fields),
+      moveMember: (id, seatId) => backend.setMemberSeat(id, seatId)
+    });
+    backend = await localBackend(createWorker(), dir, {OFFICE_PI_LOCAL: '1'}, req => studio.fetch(req));
+  };
+  t.after(() => studio?.close());
+  await reopen();
+  const rpc = async (name, args) =>
+    (
+      await (
+        await backend.fetch(
+          write('/mcp', {jsonrpc: '2.0', id: 1, method: 'tools/call', params: {name, arguments: args}})
+        )
+      ).json()
+    ).result.structuredContent;
+  const move = (id, seatId, method = 'PUT') =>
+    backend.fetch(write('/api/studio/members/' + id + '/seat', {seatId}, {}, method));
+  const seats = async () => Object.fromEntries((await rpc('office_get_state', {})).agents.map(a => [a.id, a.seatId]));
+  await studio.syncBuiltin();
+  await rpc('office_register_agent', {agent_id: 'agent-writer', name: '编辑', model: 'API'});
+  await rpc('office_register_agent', {agent_id: 'claude', name: 'CLI', model: 'Claude'});
+  const before = await seats();
+
+  assert.equal((await move('pi-local', 'desk-07')).status, 200);
+  assert.equal((await move('agent-writer', 'desk-09')).status, 200);
+  assert.equal((await move('claude', 'desk-07')).status, 409, 'a taken desk is refused');
+  assert.equal((await move('claude', 'desk-99')).status, 400);
+  assert.equal((await move('nobody', 'desk-12')).status, 404);
+  assert.equal((await move('pi-local', 'desk-12', 'POST')).status, 405);
+  assert.deepEqual(await seats(), {...before, 'pi-local': 'desk-07', 'agent-writer': 'desk-09'});
+
+  // Reconnecting members keep the desk they were moved to.
+  await reopen();
+  await studio.syncBuiltin();
+  await rpc('office_register_agent', {agent_id: 'agent-writer', name: '编辑', model: 'API'});
+  assert.deepEqual(await seats(), {...before, 'pi-local': 'desk-07', 'agent-writer': 'desk-09'});
+});

@@ -90,6 +90,7 @@ export async function startOfficeServer({
     url,
     setAgentEnabled: backend.setAgentEnabled,
     setMemberProfile: backend.setMemberProfile,
+    setMemberSeat: backend.setMemberSeat,
     close: () => new Promise(resolve => server.close(resolve))
   };
 }

@@ -2,7 +2,7 @@ import {DESKS, assignSeats} from '../public/layout.js';
 import {WORKSPACE_TOOLS, callWorkspaceTool} from './workspace.js';
 // Authentication is enforced by the owner-private Sites gateway, for both browsers
 // and MCP/service callers. No API credential is shipped in browser assets.
-export const VERSION = '2.10.0';
+export const VERSION = '2.11.0';
 const STATE_KEY = 'office/state-v2.json';
 const MODELS = ['Hermes', 'ChatGPT', 'Claude', 'Codex', 'Gemini', 'Kimi', 'Grok', '豆包', 'DeepSeek', 'Pi', 'API'];
 const STATUSES = ['working', 'thinking', 'resting'];
@@ -302,6 +302,22 @@ function setEnabled(state, agent, enabled, pauseQueued = false) {
     if (task.agentId === agent.id && (task.status === 'active' || (pauseQueued && task.status === 'queued')))
       task.status = 'paused';
   activity(state, agent.name, '已停用，执行中的任务已暂停');
+}
+
+// Moves any member (Pi, studio or external) to a free desk. Only the loopback studio calls this.
+export async function setOfficeMemberSeat(env, agentId, seatId) {
+  if (!env.PI_OFFICE) throw new Problem('Local managed office required.', 403);
+  id(agentId, 'agent_id');
+  if (!DESKS.some(d => d.id === seatId)) throw new Problem('请选择有效的工位。');
+  const result = await mutate(env, s => {
+    const agent = s.agents.find(a => a.id === agentId);
+    if (!agent) throw new Problem('找不到这位成员，请让它先连接办公室。', 404);
+    if (s.agents.some(a => a.id !== agentId && a.seatId === seatId))
+      throw new Problem('这个工位已有成员，请选择空闲工位。', 409);
+    agent.seatId = seatId;
+    return {id: agent.id, seatId};
+  });
+  return result.result;
 }
 
 // Only the loopback studio calls this function. Registry packets and legacy board saves
