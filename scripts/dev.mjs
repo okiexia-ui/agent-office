@@ -40,8 +40,15 @@ export async function startOfficeServer({
       }
       const url = new URL(request.url);
       if (!url.pathname.startsWith('/api/') && url.pathname !== '/mcp') {
-        if (projects && url.pathname === '/office.html' && !url.searchParams.has('manage')) {
-          res.writeHead(302, {Location: '/' + url.search, 'Cache-Control': 'no-store'});
+        // The local edition has one office page; old task-management links open its 任务 view.
+        if (projects && url.pathname === '/office.html') {
+          const query = new URLSearchParams(url.search);
+          if (query.has('manage')) {
+            query.delete('manage');
+            query.set('tasks', '1');
+          }
+          const search = query.toString();
+          res.writeHead(302, {Location: '/' + (search ? '?' + search : ''), 'Cache-Control': 'no-store'});
           res.end();
           return;
         }

@@ -197,3 +197,68 @@ test('the chat shows who is writing a reply, and only to messages still waiting'
   await office('office_heartbeat', {agent_id: 'writer', status: 'resting'});
   await typing.waitFor({state: 'detached'});
 });
+
+test('office tasks are dispatched and followed in the same office, and old task links land there', async t => {
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'unified-office-tasks-'));
+  const env = {BUCKET: await localBucket(dir), OFFICE_LOCAL: true, PI_OFFICE: true};
+  await callTool('office_register_agent', {agent_id: 'writer', name: '产品编辑', model: 'API'}, env);
+  await callTool('office_register_agent', {agent_id: 'review', name: '代码审校', model: 'Claude'}, env);
+  const server = await startOfficeServer({
+    stateDir: dir,
+    env: {OFFICE_PORT: '0', OFFICE_PI_LOCAL: '1'},
+    studioFetch: () => Response.json({agents: [], connections: []}),
+    projects: {fetch: () => Response.json({sessions: []})}
+  });
+  let browser;
+  t.after(async () => {
+    await browser?.close();
+    await server.close();
+    await fs.rm(dir, {recursive: true, force: true});
+  });
+  browser = await chromium.launch({
+    executablePath: process.env.CHROMIUM_EXECUTABLE_PATH,
+    args: ['--enable-unsafe-swiftshader']
+  });
+  const page = await browser.newPage({viewport: {width: 1140, height: 740}});
+  page.setDefaultTimeout(12000);
+  const errors = [];
+  page.on('pageerror', err => errors.push(err.message));
+  await page.goto(server.url + '/?agent=writer');
+  await page.getByRole('heading', {name: '产品编辑', exact: true}).waitFor();
+  const stageBefore = await page.locator('#office-frame').boundingBox();
+
+  await page.getByRole('button', {name: '派任务', exact: true}).click();
+  await page.getByLabel('任务名称').fill('整理本周发布说明');
+  await page.getByLabel('任务描述').fill('列出三条主要改动');
+  assert.equal(await page.locator('#task-agent').inputValue(), 'writer', 'the open member is preselected');
+  await page.getByRole('button', {name: '派发任务'}).click();
+  await page.locator('#task-dialog').waitFor({state: 'hidden'});
+  // The compact strip only counts the task; the scene keeps its size.
+  await page.locator('#task-chip-count').filter({hasText: '1'}).waitFor();
+  const stageAfter = await page.locator('#office-frame').boundingBox();
+  assert.ok(Math.abs(stageAfter.height - stageBefore.height) < 4, JSON.stringify([stageBefore, stageAfter]));
+  assert.equal(await page.getByRole('button', {name: '查看任务'}).count(), 1);
+
+  await page.getByRole('button', {name: '查看任务'}).click();
+  await page.getByRole('tab', {name: /任务/, selected: true}).waitFor();
+  const card = page.locator('.task-item').filter({hasText: '整理本周发布说明'});
+  await card.filter({hasText: '待领取'}).waitFor();
+  await card.getByRole('button', {name: '暂停'}).click();
+  await card.filter({hasText: '已暂停'}).waitFor();
+  await card.getByRole('button', {name: '继续'}).click();
+  await card.filter({hasText: '执行中'}).waitFor();
+  await card.getByRole('button', {name: '标记完成'}).click();
+  await card.filter({hasText: '已完成'}).waitFor();
+  const saved = await (await fetch(server.url + '/api/state')).json();
+  assert.deepEqual(
+    saved.tasks.map(task => [task.title, task.agentId, task.status]),
+    [['整理本周发布说明', 'writer', 'done']]
+  );
+
+  // Links to the former task page open this view.
+  await page.goto(server.url + '/office.html?manage=1');
+  assert.equal(new URL(page.url()).pathname, '/');
+  await page.getByRole('tab', {name: /任务/, selected: true}).waitFor();
+  await page.locator('.task-item').filter({hasText: '整理本周发布说明'}).waitFor();
+  assert.deepEqual(errors, []);
+});

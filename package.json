@@ -1,6 +1,6 @@
 {
   "name": "agent-office",
-  "version": "2.9.0",
+  "version": "2.10.0",
   "private": true,
   "type": "module",
   "description": "Build an AI work team on your own computer: agents with roles and models, team chat, tasks and downloadable results in a 3D office",

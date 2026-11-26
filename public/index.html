@@ -28,16 +28,17 @@
   <div class="workbench">
     <aside class="visual-panel" id="visual-panel" aria-label="办公室与协作成果">
       <section class="office-live" aria-labelledby="office-title">
-        <header class="office-heading"><div><h2 id="office-title">你的 AI 办公室 <span class="office-presence" id="office-presence"></span></h2></div><details class="office-options"><summary aria-label="办公室选项">•••</summary><div><button type="button" id="open-connection-guide">MCP 接入说明</button><a id="office-manage" href="./office.html?manage=1">任务与工位管理</a></div></details></header>
+        <header class="office-heading"><div><h2 id="office-title">你的 AI 办公室 <span class="office-presence" id="office-presence"></span></h2></div><details class="office-options"><summary aria-label="办公室选项">•••</summary><div><button type="button" id="open-connection-guide">MCP 接入说明</button></div></details></header>
         <div class="office-stage"><iframe id="office-frame" title="实时 3D 办公室" loading="eager"></iframe><div class="office-loading" id="office-loading">正在打开办公室…</div></div>
         <div class="office-caption"><span><i class="live-dot"></i> <span id="office-caption">点一位伙伴，直接开始对话</span></span><span class="scene-interaction-hint">可旋转 · 可缩放 · 可点选</span></div>
         <div class="work-strip" id="work-strip" aria-label="伙伴正在做什么"></div>
       </section>
       <section class="visual-results" aria-labelledby="results-heading">
-        <header class="visual-head"><div class="results-title"><span class="result-mark" aria-hidden="true">◫</span><div><h2 id="results-heading">协作成果 <span id="visual-count"></span></h2><p id="visual-scope"></p></div></div><div class="results-controls"><button id="expand-results" aria-label="展开成果区域" aria-expanded="false">查看全部</button><button id="close-visual" aria-label="返回办公室与群聊">×</button></div></header>
-        <div class="visual-tabs" role="tablist" aria-label="协作记录"><button role="tab" id="tab-results" aria-controls="panel-results" aria-selected="true" data-tab="results">成果 <span id="result-tab-count"></span></button><button role="tab" id="tab-steps" aria-controls="panel-steps" aria-selected="false" data-tab="steps" tabindex="-1">执行记录 <span id="step-tab-count"></span></button><span class="visual-sync"><i class="live-dot"></i> 与伙伴同步</span></div>
+        <header class="visual-head"><div class="results-title"><span class="result-mark" aria-hidden="true">◫</span><div><h2 id="results-heading">协作成果 <span id="visual-count"></span></h2><p id="visual-scope"></p></div></div><div class="results-controls"><button id="open-tasks" type="button" aria-label="打开任务列表">任务 <span id="task-chip-count"></span></button><button id="expand-results" aria-label="展开成果区域" aria-expanded="false">查看全部</button><button id="close-visual" aria-label="返回办公室与群聊">×</button></div></header>
+        <div class="visual-tabs" role="tablist" aria-label="协作记录"><button role="tab" id="tab-results" aria-controls="panel-results" aria-selected="true" data-tab="results">成果 <span id="result-tab-count"></span></button><button role="tab" id="tab-tasks" aria-controls="panel-tasks" aria-selected="false" data-tab="tasks" tabindex="-1">任务 <span id="task-tab-count"></span></button><button role="tab" id="tab-steps" aria-controls="panel-steps" aria-selected="false" data-tab="steps" tabindex="-1">执行记录 <span id="step-tab-count"></span></button><span class="visual-sync"><i class="live-dot"></i> 与伙伴同步</span></div>
         <p class="inline-error visual-error" id="visual-error" role="alert" hidden></p>
         <section id="panel-results" role="tabpanel" aria-labelledby="tab-results" class="visual-body"><div class="visual-picker" id="visual-picker" aria-label="选择成果"></div><p id="result-empty" class="panel-caption">成员发布的图表、文档和网页会出现在这里。</p><div id="visual-content"></div></section>
+        <section id="panel-tasks" role="tabpanel" aria-labelledby="tab-tasks" class="visual-body" hidden><div class="task-toolbar"><div class="task-filters" id="task-filters" role="group" aria-label="按阶段筛选任务"></div><button type="button" id="new-task">＋ 派任务</button></div><div id="task-list" class="task-list"></div></section>
         <section id="panel-steps" role="tabpanel" aria-labelledby="tab-steps" class="visual-body" hidden><p class="panel-caption">伙伴汇报的实际执行记录</p><div id="step-list"></div></section>
       </section>
     </aside>
@@ -50,7 +51,7 @@
         <button id="open-agent-files" role="tab" aria-selected="false" aria-controls="member-files" data-member-tab="files">文件</button>
       </div>
       <section id="member-chat" aria-label="对话">
-        <div id="project-controls" class="project-switch" hidden><button id="open-project-task" type="button">项目任务</button><button id="back-to-chat" type="button" hidden>← 返回消息</button></div>
+        <div id="project-controls" class="project-switch" hidden><button id="open-project-task" type="button">项目任务</button><button id="assign-task" type="button">派任务</button><button id="back-to-chat" type="button" hidden>← 返回消息</button></div>
         <section id="member-project" aria-label="成员项目任务" hidden></section>
         <div id="office-messages">
       <div class="connection-note" id="connection-note" role="status"></div>
@@ -81,6 +82,7 @@
   </div>
 
   <dialog id="connect-dialog" class="connect-dialog"><header><h2>把伙伴带进工作台</h2><button id="close-connect" aria-label="关闭连接指南">×</button></header><p>用已运行的 Agent 连接办公室，消息、执行步骤和 Visual 会出现在这里。</p><label for="mcp-address">MCP 地址</label><div class="copy-row"><input id="mcp-address" readonly><button id="copy-mcp">复制</button></div><ol><li>在 Agent 客户端添加这个 MCP 服务，并完成站点登录或服务认证。</li><li>使用稳定的 Agent ID 登记，然后持续读取私聊与群聊。</li><li>提交真实回复，汇报执行步骤，发布可视化成果。</li></ol><div class="capability-grid"><span>私聊与群聊</span><span>任务与在线状态</span><span>图表 / 表格 / 文档</span><span>交互 HTML / 执行步骤</span></div><p class="muted">当前通过外部 Agent 执行。添加一个名字不会启动模型；这里也不会继承 ChatGPT 的订阅或已连接工具。</p><details id="connection-config"><summary>查看 MCP 配置</summary><pre id="connection-code"></pre><a href="./hermes-setup.txt" download>下载 Hermes 接入说明</a></details></dialog>
+  <dialog id="task-dialog" class="connect-dialog task-dialog" aria-labelledby="task-dialog-title"><header><h2 id="task-dialog-title">派一个任务</h2><button type="button" id="task-dialog-close" aria-label="关闭派任务窗口">×</button></header><form id="task-form" class="task-form"><label>任务名称<input id="task-title" required maxlength="80" placeholder="例如：整理本周发布说明"></label><label>任务描述<textarea id="task-description" rows="3" maxlength="2000" placeholder="写清楚要交付什么、注意什么"></textarea></label><div class="task-form-row"><label>交给<select id="task-agent" required></select></label><label>优先级<select id="task-priority"><option value="normal">普通</option><option value="high">优先</option></select></label></div><p class="muted">任务保存在办公室，成员领取后会汇报进度和结果。</p><div class="task-form-actions"><button type="submit" class="primary" id="task-submit">派发任务</button></div></form></dialog>
   <dialog id="install-dialog" class="connect-dialog install-dialog" aria-labelledby="install-title"><header><h2 id="install-title">把 Agent Office 装成应用</h2><button id="close-install" aria-label="关闭安装说明">×</button></header><p>安装后它会出现在主屏幕、程序坞或开始菜单，在独立窗口里打开，登录状态和数据与网页版相同。</p><ol><li><b>iPhone / iPad（Safari）</b>：点底部「分享」，选「添加到主屏幕」。</li><li><b>Mac（Safari）</b>：菜单栏「文件」→「添加到程序坞」。</li><li><b>Chrome / Edge</b>：地址栏右侧的安装图标，或菜单里的「安装 Agent Office」。</li><li><b>Android（Chrome）</b>：菜单里的「安装应用」或「添加到主屏幕」。</li></ol><p class="muted">应用仍然连接你的办公室网站。断网时会显示离线提示，恢复网络后继续同步。</p></dialog>
   <div class="toast" id="toast" role="status" hidden></div>
   <script type="module" src="./start-workspace.js"></script>

@@ -86,7 +86,22 @@
 }
 .unified-office
   .workbench:not(.results-expanded):not(.visual-overlay)
-  :is(.visual-tabs, #visual-content, #panel-steps) {
+  :is(.visual-tabs, #visual-content, #panel-steps, #panel-tasks) {
+  display: none;
+}
+/* Tasks open the expanded view on the 任务 tab, so the compact strip keeps the scene large. */
+.unified-office #open-tasks {
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 2px 9px;
+  font-size: 11px;
+  color: var(--muted);
+}
+.unified-office #open-tasks span:not(:empty) {
+  color: var(--green);
+  font-weight: 600;
+}
+.unified-office :is(.results-expanded, .visual-overlay) #open-tasks {
   display: none;
 }
 .unified-office .workbench:not(.results-expanded):not(.visual-overlay) #panel-results {

@@ -5,6 +5,7 @@ import {escapeHTML as esc, VISUAL_KINDS, visualBody, isolatedDocument, visualDow
 import {createMemberPanel} from './member-panel.js';
 import {onLoopback, readLocalConfig} from './local-mode.js';
 import {readPiSetup, savePiSetup} from './pi-model-setup.js';
+import {addTask, changeTask, openTask, taskCards, taskFilters} from './task-board.js';
 const $ = selector => document.querySelector(selector);
 const demo = new URLSearchParams(location.search).get('demo') === '1';
 const localConfig = demo ? null : await readLocalConfig();
@@ -17,6 +18,8 @@ let visuals = [],
   steps = [],
   selectedVisual = new URLSearchParams(location.search).get('visual'),
   selectedTab = 'results',
+  taskFilter = 'all',
+  savingTasks = false,
   quote = null,
   polling = false,
   pollAgain = false,
@@ -702,7 +705,73 @@ function render() {
   renderMessages();
   renderComposer();
   renderSteps();
+  renderTasks();
   renderVisuals();
+}
+function renderTasks() {
+  const open = state.tasks.filter(t => t.status !== 'done').length;
+  $('#task-tab-count').textContent = open || '';
+  $('#task-chip-count').textContent = open || '';
+  setHTML($('#task-filters'), taskFilters(state, taskFilter));
+  setHTML($('#task-list'), taskCards(state, {filter: taskFilter, avatar, esc}));
+  $('#new-task').disabled = savingTasks;
+  const member = state.agents.find(a => a.id === current);
+  $('#assign-task').textContent = member && openTask(state, member.id) ? '查看任务' : '派任务';
+}
+// Tasks are saved with the whole office state; the revision guards against a concurrent change.
+async function saveTasks(next, done) {
+  if (savingTasks) return false;
+  if (demo) {
+    state = next;
+    saveDemo();
+    render();
+    toast(done);
+    return true;
+  }
+  savingTasks = true;
+  renderTasks();
+  try {
+    const response = await fetch('/api/state', {
+      method: 'PUT',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify(next),
+      signal: AbortSignal.timeout(10000)
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok)
+      throw Error(
+        response.status === 409 ? '办公室刚刚有了新变化，已刷新，请再操作一次。' : data.error || '保存失败，请重试。'
+      );
+    toast(done);
+    pollSoon();
+    return true;
+  } catch (error) {
+    toast(error.message);
+    return false;
+  } finally {
+    savingTasks = false;
+    syncTag = null;
+    await poll();
+    render();
+  }
+}
+function openTaskDialog(agentId) {
+  const members = state.agents;
+  if (!members.length) return toast(studioMode() ? '先创建一位成员，再给它派任务。' : '成员连接办公室后才能派任务。');
+  const free = members.filter(a => !a.managedDisabled && !openTask(state, a.id));
+  if (!free.length) return toast('每位成员都有未完成的任务，先完成或暂停其中一项。');
+  $('#task-form').reset();
+  $('#task-agent').replaceChildren(
+    ...members.map(a => {
+      const busy = a.managedDisabled ? '已停用' : openTask(state, a.id) ? '已有任务' : a.role;
+      const option = new Option(a.name + (busy ? ' · ' + busy : ''), a.id);
+      option.disabled = a.managedDisabled || Boolean(openTask(state, a.id));
+      return option;
+    })
+  );
+  $('#task-agent').value = free.some(a => a.id === agentId) ? agentId : free[0].id;
+  $('#task-dialog').showModal();
+  $('#task-title').focus();
 }
 async function selectConversation(id) {
   if (id === current) {
@@ -852,6 +921,7 @@ async function deliver(message, scope) {
             }
           : {agentId: scope, requestId: message.requestId, content: message.content};
       const data = await api(scope === 'group' ? '/api/channel' : '/api/chat', body);
+      pollSoon();
       conversations.set(
         scope,
         (conversations.get(scope) || []).map(m => (m.requestId === message.requestId ? data.message : m))
@@ -876,7 +946,7 @@ async function deliver(message, scope) {
 }
 function selectTab(tab) {
   selectedTab = tab;
-  for (const key of ['results', 'steps']) {
+  for (const key of ['results', 'tasks', 'steps']) {
     const on = key === tab;
     $('#tab-' + key).setAttribute('aria-selected', String(on));
     $('#tab-' + key).tabIndex = on ? 0 : -1;
@@ -1130,7 +1200,6 @@ if (demo) {
   $('#sync-status').textContent = '◌ 演示模式';
 }
 $('#composer-input').value = drafts.get(current) || '';
-$('#office-manage').href = './office.html?manage=1' + (demo ? '&demo=1' : '');
 $('#connection-code').textContent = 'mcp_servers:\n  agent_office:\n    url: "' + location.origin + '/mcp"';
 $('#open-connection-guide').onclick = () => {
   document.querySelector('.office-options').open = false;
@@ -1290,11 +1359,66 @@ $('.visual-tabs').onclick = e => {
 $('.visual-tabs').onkeydown = e => {
   if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(e.key)) return;
   e.preventDefault();
-  const tabs = ['results', 'steps'],
+  const tabs = ['results', 'tasks', 'steps'],
     i = tabs.indexOf(selectedTab),
-    next = e.key === 'Home' ? 0 : e.key === 'End' ? 1 : (i + 1) % 2;
+    n = tabs.length,
+    next = e.key === 'Home' ? 0 : e.key === 'End' ? n - 1 : (i + (e.key === 'ArrowLeft' ? n - 1 : 1)) % n;
   selectTab(tabs[next]);
   $('#tab-' + tabs[next]).focus();
+};
+$('#panel-tasks').onclick = e => {
+  const filter = e.target.closest('[data-task-filter]');
+  if (filter) {
+    taskFilter = filter.dataset.taskFilter;
+    renderTasks();
+    return;
+  }
+  const action = e.target.closest('[data-task-action]');
+  if (action) {
+    const next = changeTask(state, action.dataset.taskId, action.dataset.taskAction);
+    const done = {complete: '任务已完成', pause: '任务已暂停', resume: '任务已继续'}[action.dataset.taskAction];
+    if (next) void saveTasks(next, done);
+    return;
+  }
+  const owner = e.target.closest('[data-scene-agent]');
+  if (owner) {
+    void selectConversation(owner.dataset.sceneAgent);
+    return;
+  }
+  if (e.target.closest('#new-task')) openTaskDialog(current === 'group' ? '' : current);
+};
+function showTasks() {
+  taskFilter = 'all';
+  toggleVisual(true);
+  selectTab('tasks');
+  renderTasks();
+}
+$('#open-tasks').onclick = showTasks;
+$('#assign-task').onclick = () => (openTask(state, current) ? showTasks() : openTaskDialog(current));
+$('#task-dialog-close').onclick = () => $('#task-dialog').close();
+$('#task-form').onsubmit = async e => {
+  e.preventDefault();
+  const title = $('#task-title').value.trim();
+  if (!title) return $('#task-title').reportValidity();
+  let next;
+  try {
+    next = addTask(state, {
+      title,
+      description: $('#task-description').value.trim(),
+      agentId: $('#task-agent').value,
+      priority: $('#task-priority').value
+    });
+  } catch (error) {
+    return toast(error.message);
+  }
+  const name = state.agents.find(a => a.id === $('#task-agent').value)?.name || '成员';
+  $('#task-submit').disabled = true;
+  const saved = await saveTasks(next, '任务已派发，等待 ' + name + ' 领取');
+  $('#task-submit').disabled = false;
+  if (saved) {
+    $('#task-dialog').close();
+    if ($('.workbench').matches('.results-expanded,.visual-overlay')) showTasks();
+  }
 };
 function openStudio(template) {
   if (!studioMode()) return $('#connect-dialog').showModal();
@@ -1432,6 +1556,7 @@ async function enterOffice() {
     if (currentAgent() && !query.has('create')) panel.settings();
     else openStudio();
   } else if (query.get('panel') === 'settings') panel.settings();
+  if (query.has('tasks')) showTasks();
   else if (query.get('panel') === 'files') panel.files();
   if (query.get('connect') === '1') $('#connect-dialog').showModal();
   const url = new URL(location.href);
@@ -1443,3 +1568,20 @@ void enterOffice();
 document.addEventListener('office-project-change', loadProjectRuns);
 setInterval(loadProjectRuns, 2500);
 setInterval(poll, 4000);
+// Right after you send something, check every 1.5 seconds for half a minute, so a member's
+// "正在回复…" and its answer show up without waiting for the regular 4-second sync.
+let fastUntil = 0,
+  fastTimer = null;
+function pollSoon() {
+  fastUntil = Date.now() + 30000;
+  if (fastTimer || demo) return;
+  const tick = async () => {
+    if (Date.now() > fastUntil) {
+      fastTimer = null;
+      return;
+    }
+    await poll();
+    fastTimer = setTimeout(tick, 1500);
+  };
+  fastTimer = setTimeout(tick, 1500);
+}

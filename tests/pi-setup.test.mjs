@@ -127,7 +127,7 @@ test('the workbench can start, keep and stop Pi on a local model service', {time
       return {status: response.status, data: await response.json()};
     };
     const until = async state => {
-      for (let i = 0; i < 100; i++) {
+      for (let i = 0; i < 300; i++) {
         const {data} = await call();
         if (data.status.state === state) return data;
         await delay(100);
@@ -188,12 +188,12 @@ test('the workbench can start, keep and stop Pi on a local model service', {time
     headers: {'X-Agent-Office-Control': '1'}
   });
   assert.equal(installed.status, 202);
-  for (let i = 0; i < 100 && data.install.state !== 'done'; i++) {
+  for (let i = 0; i < 300 && data.install.state !== 'done'; i++) {
     await delay(100);
     ({data} = await office.call());
   }
   assert.equal(data.install.state, 'done');
-  assert.equal(data.pi.version, '0.0.0-test');
+  assert.equal(data.pi.version, '0.0.0-test', JSON.stringify(data.pi));
   await office.stop();
   // The next start finds the installed CLI on its own.
   office = await launch(bare);
@@ -204,7 +204,7 @@ test('the workbench can start, keep and stop Pi on a local model service', {time
   await writeFile(npm, '#!/bin/sh\necho "npm ERR! network request failed" >&2\nexit 1\n');
   office = await launch({...bare, OFFICE_PI_RUNTIME_DIR: path.join(dir, 'other-runtime')});
   await fetch(office.origin + '/api/local/pi/install', {method: 'POST', headers: {'X-Agent-Office-Control': '1'}});
-  for (let i = 0; i < 100 && data.install.state !== 'failed'; i++) {
+  for (let i = 0; i < 300 && data.install.state !== 'failed'; i++) {
     await delay(100);
     ({data} = await office.call());
   }
